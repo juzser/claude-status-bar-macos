@@ -39,9 +39,13 @@ Differences from the KDE original (the "extra features"):
 
 ## Architecture
 
-One repo, three targets. Project is described by **XcodeGen** (`project.yml`
-checked in, `.xcodeproj` generated, never committed). Build/test wrapped in a
-`Makefile` (`make generate / build / test / app / dmg`). Minimum macOS 14 (Sonoma).
+One repo, three targets in a single **SwiftPM package** (no Xcode project — the
+development machine has only Command Line Tools, and `swift build`/`swift test`
+cover everything headlessly; amended 2026-07-10 from the original XcodeGen plan).
+The `.app` bundle is assembled by a script (`scripts/make-app.sh`): bundle
+skeleton + `Info.plist` (`LSUIElement=true`) + release binaries + SwiftPM
+resource bundle + ad-hoc codesign. Build/test wrapped in a `Makefile`
+(`make build / test / app / dmg`). Minimum macOS 14 (Sonoma).
 
 | Target | Kind | Purpose |
 |---|---|---|
@@ -140,8 +144,9 @@ Two independent pipelines, mirroring the KDE design.
 
 ## Packaging & distribution
 
-- `xcodegen` + `xcodebuild`, driven by `Makefile`; CI on GitHub Actions (macOS
-  runner) runs `xcodebuild test` per PR.
+- SwiftPM (`swift build` / `swift test`) driven by `Makefile`; `.app` assembled
+  by `scripts/make-app.sh`; CI on GitHub Actions (macOS runner) runs
+  `swift test` per PR.
 - v1 releases: DMG on GitHub Releases, ad-hoc signed. Notarization + Homebrew cask
   once stable.
 - License: **MIT**. Clawd artwork attributed to clawd-tank (MIT).
