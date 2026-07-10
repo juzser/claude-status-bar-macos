@@ -10,7 +10,7 @@ let package = Package(
         .library(name: "StatusBarCore", targets: ["StatusBarCore"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/apple/swift-testing.git", from: "0.10.0"),
+        .package(url: "https://github.com/apple/swift-testing.git", exact: "0.12.0"),
     ],
     targets: [
         .target(
@@ -27,6 +27,7 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v5)]),
         .testTarget(
             name: "StatusBarCoreTests",
-            dependencies: ["StatusBarCore", .product(name: "Testing", package: "swift-testing")]),
+            dependencies: ["StatusBarCore", .product(name: "Testing", package: "swift-testing")],
+            swiftSettings: [.swiftLanguageMode(.v5)]),
     ]
 )
