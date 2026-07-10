@@ -1,0 +1,96 @@
+import SwiftUI
+import StatusBarCore
+
+struct AccountsSection: View {
+    let accounts: [Account]
+    let states: [String: AccountUsageState]
+    let yellowAt: Double
+    let redAt: Double
+    let now: Date
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Accounts").font(.caption).foregroundStyle(.secondary)
+            if accounts.isEmpty {
+                Text("No Claude account found — log in with cux or Claude Code")
+                    .font(.callout).foregroundStyle(.secondary)
+            } else {
+                ForEach(accounts) { account in
+                    AccountRow(account: account, state: states[account.id],
+                               yellowAt: yellowAt, redAt: redAt, now: now)
+                }
+            }
+        }
+    }
+}
+
+private struct AccountRow: View {
+    let account: Account
+    let state: AccountUsageState?
+    let yellowAt: Double
+    let redAt: Double
+    let now: Date
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Text(account.alias ?? account.email ?? account.id)
+                    .fontWeight(account.isActive ? .bold : .regular)
+                if account.alias != nil, let email = account.email {
+                    Text(email).font(.caption).foregroundStyle(.secondary)
+                }
+                if account.isActive {
+                    Text("active").font(.caption2).padding(.horizontal, 4)
+                        .background(.tint.opacity(0.2), in: Capsule())
+                }
+                Spacer()
+                if state?.needsRelogin == true {
+                    Label("re-login needed", systemImage: "exclamationmark.triangle")
+                        .font(.caption2).foregroundStyle(.orange)
+                }
+            }
+            if let snapshot = state?.snapshot {
+                UsageBar(title: "5h", window: snapshot.fiveHour,
+                         yellowAt: yellowAt, redAt: redAt, now: now)
+                UsageBar(title: "7d", window: snapshot.sevenDay,
+                         yellowAt: yellowAt, redAt: redAt, now: now)
+            } else {
+                Text("No usage data").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .opacity(state?.freshness == .fresh ? 1.0 : 0.5)
+    }
+}
+
+private struct UsageBar: View {
+    let title: String
+    let window: UsageWindow?
+    let yellowAt: Double
+    let redAt: Double
+    let now: Date
+
+    var body: some View {
+        if let window {
+            HStack(spacing: 6) {
+                Text(title).font(.caption2.monospaced()).frame(width: 18, alignment: .leading)
+                ProgressView(value: min(window.utilization, 100), total: 100)
+                    .tint(color)
+                Text("\(Int(window.utilization.rounded()))%")
+                    .font(.caption.monospacedDigit())
+                    .frame(width: 38, alignment: .trailing)
+                if let resetsAt = window.resetsAt, resetsAt > now {
+                    Text("resets in \(MenuBarText.elapsed(resetsAt.timeIntervalSince(now)))")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private var color: Color {
+        switch UsageLevel.level(for: window?.utilization ?? 0, yellowAt: yellowAt, redAt: redAt) {
+        case .green: return .green
+        case .yellow: return .yellow
+        case .red: return .red
+        }
+    }
+}
