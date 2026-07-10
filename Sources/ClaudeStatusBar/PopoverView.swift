@@ -9,7 +9,7 @@ struct PopoverView: View {
             VStack(alignment: .leading, spacing: 14) {
                 SessionsSection(sessions: appState.sessions, now: context.date)
                 Divider()
-                AccountsSection(accounts: appState.accounts,
+                AccountsSection(accounts: appState.visibleAccounts,
                                 states: appState.usageStore.states,
                                 yellowAt: appState.yellowAt, redAt: appState.redAt,
                                 now: context.date)

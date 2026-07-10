@@ -24,5 +24,9 @@ struct ClaudeStatusBarApp: App {
             }
         }
         .menuBarExtraStyle(.window)
+
+        Settings {
+            SettingsView(appState: appState, settings: appState.settings)
+        }
     }
 }

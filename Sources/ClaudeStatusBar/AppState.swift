@@ -6,12 +6,15 @@ import StatusBarCore
 /// with SettingsStore-backed values.
 @Observable @MainActor
 final class AppState {
-    // Settings constants until Task 13 wires SettingsStore.
-    let pollMinutes = 5
-    let yellowAt: Double = 50
-    let redAt: Double = 80
-    let displayStyle: DisplayStyle = .full
-    let showUsageOnBar = true
+    let settings: SettingsStore
+    var pollMinutes: Int { settings.pollMinutes }
+    var yellowAt: Double { settings.yellowAt }
+    var redAt: Double { settings.redAt }
+    var displayStyle: DisplayStyle { settings.displayStyle }
+    var showUsageOnBar: Bool { settings.showUsageOnBar }
+    var visibleAccounts: [Account] {
+        accounts.filter { !settings.hiddenAccounts.contains($0.id) }
+    }
 
     private(set) var sessions: [SessionRecord] = []
     private(set) var display: SessionRecord?
@@ -31,8 +34,12 @@ final class AppState {
     private let credentialsFile = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".claude/.credentials.json")
 
-    init(paths: AppPaths = AppPaths()) {
+    // `settings` defaults via `?? SettingsStore()` in the body, not as a parameter
+    // default: a MainActor-isolated default-argument expression doesn't compile
+    // under Swift language mode v5 (SE-0411 isolated default values needs mode 6).
+    init(paths: AppPaths = AppPaths(), settings: SettingsStore? = nil) {
         self.paths = paths
+        self.settings = settings ?? SettingsStore()
         self.usageStore = UsageStore(fetcher: UsageClient(), cacheFile: paths.usageCacheFile)
         self.currentVerb = ThinkingVerbs.all[0]
         self.currentVerb = verbCycler.next()
