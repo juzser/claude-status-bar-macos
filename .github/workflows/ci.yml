@@ -9,3 +9,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: swift test
+      - name: Hook integration test
+        run: |
+          swift build
+          ./scripts/hook-integration-test.sh
