@@ -47,6 +47,8 @@ private struct AccountRow: View {
                 if state?.needsRelogin == true {
                     Label("re-login needed", systemImage: "exclamationmark.triangle")
                         .font(.caption2).foregroundStyle(.orange)
+                    Button("Log in") { TerminalLauncher.run(ReloginCommand.command(for: account)) }
+                        .controlSize(.small)
                 }
             }
             if let snapshot = state?.snapshot {

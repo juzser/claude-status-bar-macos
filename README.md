@@ -11,7 +11,7 @@ with multi-account support.
   account in the menu bar, color-coded (green / yellow ≥50% / red ≥80%,
   configurable).
 - **Multi-account** — discovers every account managed by
-  cux under `~/.cux` (falls back to
+  [cux](https://cux.inulute.com) under `~/.cux` (falls back to
   `~/.claude/.credentials.json`); per-account usage bars in the popover.
 - **Claude Code activity** — Clawd shows what your sessions are doing right
   now (thinking, editing, running…), with playful verbs and elapsed timers,
