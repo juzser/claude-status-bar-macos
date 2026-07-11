@@ -6,7 +6,9 @@ struct ClaudeStatusBarApp: App {
     @State private var appState = AppState()
 
     init() {
-        NSApp.setActivationPolicy(.accessory)
+        // NSApp is still nil this early in the SwiftUI App lifecycle;
+        // NSApplication.shared creates the app object on first access.
+        NSApplication.shared.setActivationPolicy(.accessory)
     }
 
     var body: some Scene {
