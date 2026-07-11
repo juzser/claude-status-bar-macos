@@ -15,15 +15,12 @@ struct ClaudeStatusBarApp: App {
         MenuBarExtra {
             PopoverView(appState: appState)
         } label: {
-            // TimelineView ticks the elapsed counter while a session is busy.
-            TimelineView(.periodic(from: .now, by: 1)) { _ in
-                MenuBarLabelView(model: appState.labelModel,
-                                 icon: StatusIcon.icon(for: appState.display))
-            }
-            .onAppear {
-                appState.start()
-                Task { await appState.refreshUsageNow() }
-            }
+            MenuBarLabelView(model: appState.labelModel,
+                             icon: StatusIcon.icon(for: appState.display))
+                .onAppear {
+                    appState.start()
+                    Task { await appState.refreshUsageNow() }
+                }
         }
         .menuBarExtraStyle(.window)
 

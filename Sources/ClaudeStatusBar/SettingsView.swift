@@ -54,8 +54,8 @@ private struct GeneralTab: View {
             }
             .onChange(of: settings.messageStyleId) {
                 // Instant feedback: a bar currently in .thinking re-renders
-                // now; tool/waiting text re-themes on the next TimelineView
-                // tick (≤1 s).
+                // now; tool/waiting text re-themes on the next elapsed tick
+                // (≤1 s).
                 appState.rerollThinkingPhrase()
             }
             Picker("Usage poll interval", selection: $settings.pollMinutes) {

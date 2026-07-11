@@ -29,7 +29,7 @@ struct MenuBarLabelView: View {
         return Image(systemName: icon.sfFallback)
     }
 
-    /// Decoded PNGs cached per icon case — the 1 Hz TimelineView tick would
+    /// Decoded PNGs cached per icon case — the 1 Hz elapsed tick would
     /// otherwise re-read and re-decode the same file from disk every second.
     private static var imageCache: [ClawdIcon: NSImage] = [:]
 

@@ -19,6 +19,8 @@ final class AppState {
     private(set) var display: SessionRecord?
     private(set) var accounts: [Account] = []
     private(set) var currentVerb: String
+    /// 1 Hz heartbeat for the menu bar elapsed counter; advances only while busy.
+    private(set) var tick = Date()
     let usageStore: UsageStore
     let paths: AppPaths
 
@@ -26,6 +28,7 @@ final class AppState {
     private var watcher: DirectoryWatcher?
     private var pollTask: Task<Void, Never>?
     private var reaggregateTask: Task<Void, Never>?
+    private var tickTask: Task<Void, Never>?
     private var pollCycle = 0
     private var started = false
 
@@ -81,6 +84,28 @@ final class AppState {
         if display?.state == .thinking, previous != .thinking {
             currentVerb = verbCycler.next(from: settings.messageStyle.thinking)
         }
+        updateTicker()
+    }
+
+    /// Drives the elapsed counter at 1 Hz while a session is busy. A plain
+    /// task loop, not TimelineView: a periodic TimelineView in the MenuBarExtra
+    /// label re-anchors its schedule at `.now` on every label re-render, so the
+    /// first entry is always already due — the main thread spins at 100% CPU
+    /// and the status item never finishes appearing (observed on macOS 26).
+    private func updateTicker() {
+        if display?.busySince != nil {
+            guard tickTask == nil else { return }
+            tick = Date()
+            tickTask = Task { [weak self] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(1))
+                    self?.tick = Date()
+                }
+            }
+        } else {
+            tickTask?.cancel()
+            tickTask = nil
+        }
     }
 
     /// Called when the user picks a new message style: forget the no-repeat
@@ -103,7 +128,7 @@ final class AppState {
                                  style: displayStyle, showUsage: showUsageOnBar,
                                  yellowAt: yellowAt, redAt: redAt,
                                  verb: currentVerb, messageStyle: settings.messageStyle,
-                                 now: Date())
+                                 now: tick)
     }
 
     private func pollOnce() async {
