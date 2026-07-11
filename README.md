@@ -24,6 +24,15 @@ with multi-account support.
 Download `ClaudeStatusBar.dmg` from Releases, drag to Applications, launch.
 The app lives in the menu bar only (no Dock icon).
 
+The app is ad-hoc signed, so macOS quarantines the downloaded copy and the
+first launch is refused ("cannot verify" / "damaged"). Right-click the app in
+Applications and choose **Open** (twice if needed), or clear the quarantine
+flag directly:
+
+```sh
+xattr -d com.apple.quarantine /Applications/ClaudeStatusBar.app
+```
+
 To enable activity tracking: Settings → Claude Code → Install. This adds
 hook entries to `~/.claude/settings.json` (a timestamped backup is written
 first; Remove deletes exactly what Install added).

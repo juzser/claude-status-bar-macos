@@ -2,8 +2,7 @@ import Foundation
 import Observation
 import StatusBarCore
 
-/// Single source of truth for the UI. Task 13 replaces the constants below
-/// with SettingsStore-backed values.
+/// Single source of truth for the UI.
 @Observable @MainActor
 final class AppState {
     let settings: SettingsStore
@@ -28,6 +27,7 @@ final class AppState {
     private var pollTask: Task<Void, Never>?
     private var reaggregateTask: Task<Void, Never>?
     private var pollCycle = 0
+    private var started = false
 
     private let cuxRoot = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".cux", isDirectory: true)
@@ -46,6 +46,10 @@ final class AppState {
     }
 
     func start() {
+        // Re-entrancy guard: a second .onAppear would otherwise double the
+        // watcher and the poll/reaggregate loops.
+        guard !started else { return }
+        started = true
         try? paths.ensureDirs()
         usageStore.loadCache()
         accounts = AccountDiscovery.discover(cuxRoot: cuxRoot, credentialsFile: credentialsFile)

@@ -35,8 +35,7 @@ public struct UsageSnapshot: Codable, Equatable, Sendable {
 
     private static func window(from any: Any?) -> UsageWindow? {
         guard let dict = any as? [String: Any] else { return nil }
-        guard let number = dict["utilization"] as? NSNumber,
-              !(number is NSString) else { return nil }
+        guard let number = dict["utilization"] as? NSNumber else { return nil }
         let resets = (dict["resets_at"] as? String).flatMap(ISO8601.parse)
         return UsageWindow(utilization: number.doubleValue, resetsAt: resets)
     }
