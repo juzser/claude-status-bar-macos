@@ -65,6 +65,19 @@ private func makeStore(_ results: [String: Result<UsageSnapshot, UsageError>]) -
         #expect(store.states["a"]?.freshness == .stale)
     }
 
+    @Test func successAfterUnauthorizedClearsRelogin() async {
+        let (store, cache) = makeStore(["expired": .failure(.unauthorized),
+                                        "fresh": .success(snap(20))])
+        defer { try? FileManager.default.removeItem(at: cache.deletingLastPathComponent()) }
+        await store.refresh(accounts: [(account("a"), "expired")])
+        #expect(store.states["a"]?.needsRelogin == true)
+
+        await store.refresh(accounts: [(account("a"), "fresh")])
+        #expect(store.states["a"]?.needsRelogin == false)
+        #expect(store.states["a"]?.failureCount == 0)
+        #expect(store.states["a"]?.freshness == .fresh)
+    }
+
     @Test func missingTokenNeedsRelogin() async {
         let (store, cache) = makeStore([:])
         defer { try? FileManager.default.removeItem(at: cache.deletingLastPathComponent()) }

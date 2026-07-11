@@ -72,6 +72,28 @@ private func usage(five: Double, seven: Double) -> AccountUsageState {
         #expect(model(display: nil, usage: nil, style: .full).usageText == nil)
     }
 
+    @Test func compactShowsPercentOnlyNoActivity() {
+        let m = model(display: session(.tool, label: "Running", busyFor: 10),
+                      usage: usage(five: 70.6, seven: 29.2), style: .compact)
+        #expect(m.activityText == nil)
+        #expect(m.usageText == "71%")
+        #expect(m.textLeading == false)
+    }
+
+    @Test func textFirstLeadsWithActivity() {
+        let m = model(display: session(.tool, label: "Running", busyFor: 192),
+                      usage: usage(five: 70.6, seven: 29.2), style: .textFirst)
+        #expect(m.activityText == "Running · 3m 12s")
+        #expect(m.usageText == "71%")
+        #expect(m.textLeading == true)
+    }
+
+    @Test func onlyTextFirstLeadsWithText() {
+        for style in [DisplayStyle.iconOnly, .compact, .percent, .full] {
+            #expect(model(display: nil, usage: nil, style: style).textLeading == false)
+        }
+    }
+
     @Test func levelsComputedFromThresholds() {
         let m = model(display: nil, usage: usage(five: 85, seven: 55), style: .full)
         #expect(m.fiveHourLevel == .red)

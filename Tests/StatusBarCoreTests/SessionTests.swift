@@ -4,12 +4,13 @@ import Testing
 
 @Suite struct HookEventTests {
     @Test func parsesPayload() throws {
-        let payload = Data(#"{"session_id":"abc-123","cwd":"/tmp/p","tool_name":"Bash","hook_event_name":"PreToolUse"}"#.utf8)
+        let payload = Data(#"{"session_id":"abc-123","cwd":"/tmp/p","tool_name":"Bash","hook_event_name":"PreToolUse","transcript_path":"/tmp/t.jsonl"}"#.utf8)
         let event = try #require(HookEvent.parse(eventName: nil, payload: payload))
         #expect(event.name == "PreToolUse")
         #expect(event.sessionId == "abc-123")
         #expect(event.cwd == "/tmp/p")
         #expect(event.toolName == "Bash")
+        #expect(event.transcriptPath == "/tmp/t.jsonl")
     }
 
     @Test func argvNameWinsOverPayload() throws {
@@ -113,6 +114,23 @@ import Testing
         let thinking = SessionReducer.reduce(nil, event: event("UserPromptSubmit"), now: t0)
         let rec = SessionReducer.reduce(thinking, event: event("SomethingNew"), now: t1)
         #expect(rec == thinking)
+    }
+
+    @Test func transcriptPathCapturedAndKeptAcrossEvents() throws {
+        let start = try #require(HookEvent.parse(eventName: "SessionStart", payload: Data(
+            #"{"session_id":"s1","cwd":"/tmp/p","transcript_path":"/tmp/t.jsonl"}"#.utf8)))
+        var rec = SessionReducer.reduce(nil, event: start, now: t0)
+        #expect(rec?.transcriptPath == "/tmp/t.jsonl")
+        // later events without the field must not erase it
+        rec = SessionReducer.reduce(rec, event: event("Stop"), now: t1)
+        #expect(rec?.transcriptPath == "/tmp/t.jsonl")
+    }
+
+    @Test func recordsWithoutTranscriptPathStillDecode() throws {
+        // records written by older builds lack the key
+        let old = Data(#"{"cwd":"/tmp/p","sessionId":"s1","startedAt":"2026-01-01T00:00:00Z","state":"idle","updatedAt":"2026-01-01T00:00:00Z"}"#.utf8)
+        let rec = try SessionRecord.decode(old)
+        #expect(rec.transcriptPath == nil)
     }
 
     @Test func recordRoundTripsDeterministically() throws {

@@ -49,6 +49,10 @@ private struct AccountRow: View {
                         .font(.caption2).foregroundStyle(.orange)
                     Button("Log in") { TerminalLauncher.run(ReloginCommand.command(for: account)) }
                         .controlSize(.small)
+                } else if state?.freshness == .fresh {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.caption2).foregroundStyle(.green)
+                        .help("Logged in")
                 }
             }
             if let snapshot = state?.snapshot {

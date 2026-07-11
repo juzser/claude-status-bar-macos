@@ -16,6 +16,9 @@ final class AppState {
     }
 
     private(set) var sessions: [SessionRecord] = []
+    /// sessionId -> Claude Code session title (last ai-title in the transcript).
+    private(set) var sessionTitles: [String: String] = [:]
+    private var titleCheckedAt: [String: Date] = [:]
     private(set) var display: SessionRecord?
     private(set) var accounts: [Account] = []
     private(set) var currentVerb: String
@@ -84,7 +87,26 @@ final class AppState {
         if display?.state == .thinking, previous != .thinking {
             currentVerb = verbCycler.next(from: settings.messageStyle.thinking)
         }
+        refreshSessionTitles()
         updateTicker()
+    }
+
+    /// Transcript tail-reads happen here, throttled to once per session per
+    /// minute — never in the popover's 1 Hz render path.
+    private func refreshSessionTitles() {
+        let now = Date()
+        let live = Set(sessions.map(\.sessionId))
+        sessionTitles = sessionTitles.filter { live.contains($0.key) }
+        titleCheckedAt = titleCheckedAt.filter { live.contains($0.key) }
+        for session in sessions {
+            guard let path = session.transcriptPath else { continue }
+            if let checked = titleCheckedAt[session.sessionId],
+               now.timeIntervalSince(checked) < 60 { continue }
+            titleCheckedAt[session.sessionId] = now
+            if let title = SessionTitle.read(transcript: URL(fileURLWithPath: path)) {
+                sessionTitles[session.sessionId] = title
+            }
+        }
     }
 
     /// Drives the elapsed counter at 1 Hz while a session is busy. A plain
@@ -119,6 +141,16 @@ final class AppState {
     func refreshUsageNow() async {
         accounts = AccountDiscovery.discover(cuxRoot: cuxRoot, credentialsFile: credentialsFile)
         await usageStore.refresh(accounts: accounts.map { ($0, token(for: $0)) })
+    }
+
+    /// Re-fetches only accounts flagged needs-relogin. Runs when the popover
+    /// opens: after the user logs back in, the poll loop's failure backoff
+    /// (every 8th cycle at 3+ failures) would otherwise keep the stale badge
+    /// up for the better part of an hour.
+    func recheckReloginAccounts() async {
+        let flagged = accounts.filter { usageStore.states[$0.id]?.needsRelogin == true }
+        guard !flagged.isEmpty else { return }
+        await usageStore.refresh(accounts: flagged.map { ($0, token(for: $0)) })
     }
 
     var labelModel: MenuBarLabelModel {

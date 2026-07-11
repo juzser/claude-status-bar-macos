@@ -1,7 +1,7 @@
 import Foundation
 
 public enum DisplayStyle: String, CaseIterable, Sendable {
-    case iconOnly, percent, full
+    case iconOnly, compact, percent, textFirst, full
 }
 
 public struct MenuBarLabelModel: Equatable, Sendable {
@@ -10,6 +10,9 @@ public struct MenuBarLabelModel: Equatable, Sendable {
     public let usageText: String?
     public let fiveHourLevel: UsageLevel?
     public let sevenDayLevel: UsageLevel?
+    /// textFirst renders [activity][icon][usage]; every other style leads
+    /// with the icon.
+    public let textLeading: Bool
 }
 
 public enum MenuBarText {
@@ -21,7 +24,7 @@ public enum MenuBarText {
         let state = display?.state ?? .idle
 
         var activity: String?
-        if style != .iconOnly, let display {
+        if style != .iconOnly, style != .compact, let display {
             let time = display.busySince.map { elapsed(now.timeIntervalSince($0)) }
             switch display.state {
             case .tool:
@@ -50,7 +53,7 @@ public enum MenuBarText {
                 UsageLevel.level(for: $0.utilization, yellowAt: yellowAt, redAt: redAt)
             }
             switch style {
-            case .percent:
+            case .percent, .compact, .textFirst:
                 usageText = five.map { "\($0)%" }
             case .full:
                 let parts = [five.map { "5h \($0)%" }, seven.map { "7d \($0)%" }]
@@ -63,7 +66,8 @@ public enum MenuBarText {
 
         return MenuBarLabelModel(state: state, activityText: activity,
                                  usageText: usageText,
-                                 fiveHourLevel: fiveLevel, sevenDayLevel: sevenLevel)
+                                 fiveHourLevel: fiveLevel, sevenDayLevel: sevenLevel,
+                                 textLeading: style == .textFirst)
     }
 
     public static func elapsed(_ interval: TimeInterval) -> String {

@@ -42,11 +42,15 @@ private struct GeneralTab: View {
                     }
                 }
             Toggle("Show usage on menu bar", isOn: $settings.showUsageOnBar)
+            // 🦀 stands in for the Clawd icon in each sample.
             Picker("Display style", selection: $settings.displayStyle) {
-                Text("Icon only").tag(DisplayStyle.iconOnly)
-                Text("Icon + %").tag(DisplayStyle.percent)
-                Text("Full").tag(DisplayStyle.full)
+                Text("Icon only — 🦀").tag(DisplayStyle.iconOnly)
+                Text("Compact — 🦀 71%").tag(DisplayStyle.compact)
+                Text("Standard — 🦀 Working · 3s  71%").tag(DisplayStyle.percent)
+                Text("Text first — Working · 3s 🦀 71%").tag(DisplayStyle.textFirst)
+                Text("Full — 🦀 Working · 3s  5h 71% · 7d 29%").tag(DisplayStyle.full)
             }
+            .pickerStyle(.radioGroup)
             Picker("Message style", selection: $settings.messageStyleId) {
                 ForEach(MessageStyles.all) { style in
                     Text(style.name).tag(style.id)
