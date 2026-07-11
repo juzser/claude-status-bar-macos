@@ -1,6 +1,11 @@
 import Foundation
 import Observation
 import StatusBarCore
+import os
+
+// DIAGNOSTIC(shimmer): temporary ticker probe — remove once the
+// "no visible animation" report is resolved.
+private let tickerLog = Logger(subsystem: "ClaudeStatusBar", category: "shimmer")
 
 /// Single source of truth for the UI.
 @Observable @MainActor
@@ -125,6 +130,8 @@ final class AppState {
             tickTask?.cancel()
             tickInterval = interval
             tick = Date()
+            // DIAGNOSTIC(shimmer):
+            tickerLog.info("ticker start interval=\(interval == .seconds(1) ? "1s" : "125ms", privacy: .public) style=\(String(describing: self.displayStyle), privacy: .public) state=\(String(describing: self.display?.state), privacy: .public)")
             tickTask = Task { [weak self] in
                 while !Task.isCancelled {
                     try? await Task.sleep(for: interval)
@@ -132,6 +139,10 @@ final class AppState {
                 }
             }
         } else {
+            if tickTask != nil {
+                // DIAGNOSTIC(shimmer):
+                tickerLog.info("ticker stop")
+            }
             tickTask?.cancel()
             tickTask = nil
         }
@@ -147,7 +158,7 @@ final class AppState {
 
     func refreshUsageNow() async {
         accounts = AccountDiscovery.discover(cuxRoot: cuxRoot, credentialsFile: credentialsFile)
-        await usageStore.refresh(accounts: accounts.map { ($0, token(for: $0)) })
+        await usageStore.refresh(accounts: usageInputs(accounts))
     }
 
     /// Re-fetches only accounts flagged needs-relogin. Runs when the popover
@@ -157,7 +168,7 @@ final class AppState {
     func recheckReloginAccounts() async {
         let flagged = accounts.filter { usageStore.states[$0.id]?.needsRelogin == true }
         guard !flagged.isEmpty else { return }
-        await usageStore.refresh(accounts: flagged.map { ($0, token(for: $0)) })
+        await usageStore.refresh(accounts: usageInputs(flagged))
     }
 
     var labelModel: MenuBarLabelModel {
@@ -180,7 +191,21 @@ final class AppState {
             return !UsageStore.shouldSkip(cycle: cycle, failureCount: failures)
         }
         guard !due.isEmpty else { return }
-        await usageStore.refresh(accounts: due.map { ($0, token(for: $0)) })
+        await usageStore.refresh(accounts: usageInputs(due))
+    }
+
+    /// Pairs each account with its token and, for tokenless cux slots, the
+    /// snapshot cux itself polled into ~/.cux/runtime/usage-cache.json
+    /// (joined on organizationUuid). Reads the cache file once per refresh.
+    private func usageInputs(
+        _ accounts: [Account]
+    ) -> [(account: Account, token: String?, cached: UsageSnapshot?)] {
+        let cache = CuxUsageCache.load(
+            file: cuxRoot.appendingPathComponent("runtime/usage-cache.json"))
+        return accounts.map { account in
+            (account, token(for: account),
+             account.organizationUuid.flatMap { cache[$0] })
+        }
     }
 
     /// Token is read at fetch time only, kept in a local, never stored or logged.

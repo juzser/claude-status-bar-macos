@@ -1,4 +1,11 @@
 import AppKit
+import os
+
+// DIAGNOSTIC(shimmer): temporary render-rate probe — remove once the
+// "no visible animation" report is resolved.
+private let shimmerLog = Logger(subsystem: "ClaudeStatusBar", category: "shimmer")
+private nonisolated(unsafe) var renderCount = 0
+private nonisolated(unsafe) var lastSampleAt = Date.distantPast
 
 /// Renders the bar's activity text with a left→right shimmer. MenuBarExtra
 /// flattens SwiftUI Text foreground colors to a monochrome template, so the
@@ -16,6 +23,14 @@ enum ShimmerText {
     }
 
     static func image(_ text: String, phase: Double, dark: Bool) -> NSImage {
+        // DIAGNOSTIC(shimmer): sampled ~1/sec; renders-per-second ≈ fps.
+        renderCount += 1
+        let now = Date()
+        if now.timeIntervalSince(lastSampleAt) >= 1 {
+            shimmerLog.info("renders/s=\(renderCount) phase=\(phase, format: .fixed(precision: 3)) text=\(text, privacy: .public)")
+            renderCount = 0
+            lastSampleAt = now
+        }
         // 13 pt system font matches SwiftUI's default Text in the menu bar.
         let font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
         let full: NSColor = dark ? .white : .black

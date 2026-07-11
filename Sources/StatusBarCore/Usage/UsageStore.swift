@@ -40,14 +40,24 @@ public final class UsageStore {
         return cycle % interval != 0
     }
 
+    /// A cux cache snapshot older than this shows as stale — cux's hooks
+    /// normally repoll within minutes, so a 30-minute-old entry means cux
+    /// hasn't been active.
+    public static let cuxCacheFreshFor: TimeInterval = 30 * 60
+
     public func refresh(accounts: [(account: Account, token: String?)]) async {
+        await refresh(accounts: accounts.map { ($0.account, $0.token, nil) })
+    }
+
+    public func refresh(accounts: [(account: Account, token: String?, cached: UsageSnapshot?)],
+                        now: Date = Date()) async {
         let fetcher = self.fetcher
-        let results = await withTaskGroup(
-            of: (String, Result<UsageSnapshot, UsageError>?).self
+        let fetched = await withTaskGroup(
+            of: (String, Result<UsageSnapshot, UsageError>).self
         ) { group in
-            for (account, token) in accounts {
+            for (account, token, _) in accounts {
+                guard let token else { continue }
                 group.addTask {
-                    guard let token else { return (account.id, nil) }
                     do {
                         return (account.id, .success(try await fetcher.fetch(token: token)))
                     } catch let error as UsageError {
@@ -57,14 +67,17 @@ public final class UsageStore {
                     }
                 }
             }
-            var collected: [(String, Result<UsageSnapshot, UsageError>?)] = []
-            for await item in group { collected.append(item) }
+            var collected: [String: Result<UsageSnapshot, UsageError>] = [:]
+            for await (id, result) in group {
+                collected[id] = result
+            }
             return collected
         }
 
-        for (id, result) in results {
+        for (account, token, cached) in accounts {
+            let id = account.id
             var state = states[id] ?? AccountUsageState()
-            switch result {
+            switch token.flatMap({ _ in fetched[id] }) {
             case .success(let snapshot):
                 state = AccountUsageState(snapshot: snapshot, freshness: .fresh)
             case .failure(.unauthorized):
@@ -74,8 +87,18 @@ public final class UsageStore {
             case .failure:
                 state.freshness = .stale
                 state.failureCount += 1
-            case nil:  // no token available
-                state.needsRelogin = true
+            case nil:  // no token — cux slot account or missing credentials
+                if let cached {
+                    let fresh = now.timeIntervalSince(cached.fetchedAt) <= Self.cuxCacheFreshFor
+                    state = AccountUsageState(snapshot: cached,
+                                              freshness: fresh ? .fresh : .stale)
+                } else if account.slot != nil {
+                    // cux owns auth for slot accounts; a missing cache entry
+                    // means "no data yet", never "logged out".
+                    state.needsRelogin = false
+                } else {
+                    state.needsRelogin = true
+                }
             }
             states[id] = state
         }

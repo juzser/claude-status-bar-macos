@@ -23,7 +23,8 @@ private func makeCuxFixture(in root: URL) throws {
       "2":{"slot":2,"email":"b@y.com","alias":"oe"}}}
     """
     try Data(state.utf8).write(to: root.appendingPathComponent("state.json"))
-    try Data(#"{"claudeAiOauth":{"accessToken":"fake-token-1"}}"#.utf8)
+    // Slot 1 mirrors current cux: profile metadata only, no token keys.
+    try Data(#"{"organizationUuid":"org-1","emailAddress":"a@x.com"}"#.utf8)
         .write(to: root.appendingPathComponent("accounts/01-a@x.com/oauth.json"))
     try Data(#"{"accessToken":"fake-token-2"}"#.utf8)
         .write(to: root.appendingPathComponent("accounts/2-b@y.com/oauth.json"))
@@ -46,6 +47,19 @@ private func makeCuxFixture(in root: URL) throws {
         #expect(accounts[1].id == "slot-2")
         #expect(!accounts[1].isActive)
         #expect(accounts[1].oauthURL.path.hasSuffix("accounts/2-b@y.com/oauth.json"))
+    }
+
+    /// The org uuid is the join key into cux's usage cache; oauth.json files
+    /// without one (older cux) must still discover, with a nil uuid.
+    @Test func readsOrganizationUuidFromOauthMetadata() throws {
+        let tmp = makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let cux = tmp.appendingPathComponent("cux", isDirectory: true)
+        try makeCuxFixture(in: cux)
+        let accounts = AccountDiscovery.discover(
+            cuxRoot: cux, credentialsFile: tmp.appendingPathComponent("none.json"))
+        #expect(accounts[0].organizationUuid == "org-1")
+        #expect(accounts[1].organizationUuid == nil)
     }
 
     @Test func skipsAccountWithoutTokenFile() throws {

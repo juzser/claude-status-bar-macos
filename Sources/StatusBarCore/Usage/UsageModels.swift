@@ -27,6 +27,12 @@ public struct UsageSnapshot: Codable, Equatable, Sendable {
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
         }
+        return parse(object: obj, fetchedAt: fetchedAt)
+    }
+
+    /// Same tolerance for an already-deserialized JSON object — cux's usage
+    /// cache nests per-org entries with the identical window shape.
+    public static func parse(object obj: [String: Any], fetchedAt: Date) -> UsageSnapshot? {
         let five = window(from: obj["five_hour"])
         let seven = window(from: obj["seven_day"])
         if five == nil && seven == nil { return nil }
