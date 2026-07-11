@@ -3,6 +3,7 @@ import StatusBarCore
 
 struct PopoverView: View {
     let appState: AppState
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
@@ -19,7 +20,13 @@ struct PopoverView: View {
                         Task { await appState.refreshUsageNow() }
                     }
                     Spacer()
-                    SettingsLink { Text("Settings…") }
+                    Button("Settings…") {
+                        // SettingsLink silently creates no window from a
+                        // MenuBarExtra popover while the app is an inactive
+                        // accessory (macOS 26). Activate first, then open.
+                        NSApp.activate(ignoringOtherApps: true)
+                        openSettings()
+                    }
                     Button("Quit") { NSApp.terminate(nil) }
                 }
                 .controlSize(.small)
