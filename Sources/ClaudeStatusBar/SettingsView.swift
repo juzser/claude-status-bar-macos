@@ -8,7 +8,7 @@ struct SettingsView: View {
 
     var body: some View {
         TabView {
-            GeneralTab(settings: settings)
+            GeneralTab(appState: appState, settings: settings)
                 .tabItem { Label("General", systemImage: "gearshape") }
             ThresholdsTab(settings: settings)
                 .tabItem { Label("Thresholds", systemImage: "gauge") }
@@ -23,6 +23,7 @@ struct SettingsView: View {
 }
 
 private struct GeneralTab: View {
+    let appState: AppState
     @Bindable var settings: SettingsStore
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var loginError: String?
@@ -45,6 +46,17 @@ private struct GeneralTab: View {
                 Text("Icon only").tag(DisplayStyle.iconOnly)
                 Text("Icon + %").tag(DisplayStyle.percent)
                 Text("Full").tag(DisplayStyle.full)
+            }
+            Picker("Message style", selection: $settings.messageStyleId) {
+                ForEach(MessageStyles.all) { style in
+                    Text(style.name).tag(style.id)
+                }
+            }
+            .onChange(of: settings.messageStyleId) {
+                // Instant feedback: a bar currently in .thinking re-renders
+                // now; tool/waiting text re-themes on the next TimelineView
+                // tick (≤1 s).
+                appState.rerollThinkingPhrase()
             }
             Picker("Usage poll interval", selection: $settings.pollMinutes) {
                 Text("1 min").tag(1)
