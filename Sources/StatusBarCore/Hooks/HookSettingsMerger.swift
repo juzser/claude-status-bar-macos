@@ -15,8 +15,10 @@ public enum HookSettingsMerger {
         var result = remove(from: settings)  // idempotency: drop any prior entry of ours
         var hooks = result["hooks"] as? [String: Any] ?? [:]
         for event in events {
+            // The command runs through a shell; the path must be quoted or an
+            // .app renamed to contain a space silently breaks every hook.
             var entry: [String: Any] = [
-                "hooks": [["type": "command", "command": "\(binaryPath) \(event)"]]
+                "hooks": [["type": "command", "command": "\"\(binaryPath)\" \(event)"]]
             ]
             if matcherEvents.contains(event) { entry["matcher"] = "*" }
             var list = hooks[event] as? [[String: Any]] ?? []
@@ -44,7 +46,7 @@ public enum HookSettingsMerger {
         return events.allSatisfy { event in
             guard let list = hooks[event] as? [[String: Any]] else { return false }
             return list.contains { entry in
-                commands(of: entry).contains { $0.hasPrefix("\(binaryPath) ") }
+                commands(of: entry).contains { $0.hasPrefix("\"\(binaryPath)\" ") }
             }
         }
     }

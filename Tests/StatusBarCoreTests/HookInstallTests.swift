@@ -15,7 +15,7 @@ private let bin = "/Applications/ClaudeStatusBar.app/Contents/MacOS/claude-statu
         #expect(pre[0]["matcher"] as? String == "*")
         let entry = try #require((pre[0]["hooks"] as? [[String: Any]])?.first)
         #expect(entry["type"] as? String == "command")
-        #expect(entry["command"] as? String == "\(bin) PreToolUse")
+        #expect(entry["command"] as? String == "\"\(bin)\" PreToolUse")
 
         // Non-tool events carry no matcher key
         let stop = try #require(hooks["Stop"] as? [[String: Any]])
@@ -75,6 +75,21 @@ private let bin = "/Applications/ClaudeStatusBar.app/Contents/MacOS/claude-statu
         #expect(HookSettingsMerger.isInstalled(full, binaryPath: bin))
         let partial = HookSettingsMerger.remove(from: full)
         #expect(!HookSettingsMerger.isInstalled(partial, binaryPath: bin))
+    }
+
+    @Test func pathWithSpacesIsQuotedAndRoundTrips() throws {
+        let spaced = "/Applications/Claude Status Bar.app/Contents/MacOS/claude-status-hook"
+        let installed = HookSettingsMerger.install(into: [:], binaryPath: spaced)
+
+        // The shell command must carry the path as a single quoted token.
+        let pre = try #require((installed["hooks"] as? [String: Any])?["PreToolUse"] as? [[String: Any]])
+        let entry = try #require((pre[0]["hooks"] as? [[String: Any]])?.first)
+        #expect(entry["command"] as? String == "\"\(spaced)\" PreToolUse")
+
+        // install -> isInstalled -> remove round-trip
+        #expect(HookSettingsMerger.isInstalled(installed, binaryPath: spaced))
+        #expect(!HookSettingsMerger.isInstalled(installed, binaryPath: bin))
+        #expect(HookSettingsMerger.remove(from: installed)["hooks"] == nil)
     }
 }
 
