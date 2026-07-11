@@ -31,9 +31,12 @@ public final class UsageStore {
     }
 
     /// Exponential per-account backoff after failures, capped at every 8th cycle.
+    /// `failureCount` is branched (not `min(1 << failureCount, 8)`) because a
+    /// sustained-failure account can accumulate a huge failureCount over days;
+    /// `1 << 63` overflows to `Int.min` and `1 << 64` to 0, and `cycle % 0` traps.
     public static func shouldSkip(cycle: Int, failureCount: Int) -> Bool {
         guard failureCount > 0 else { return false }
-        let interval = min(1 << failureCount, 8)
+        let interval = failureCount >= 3 ? 8 : 1 << failureCount
         return cycle % interval != 0
     }
 

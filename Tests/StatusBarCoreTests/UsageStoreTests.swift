@@ -98,4 +98,16 @@ private func makeStore(_ results: [String: Result<UsageSnapshot, UsageError>]) -
         #expect(!UsageStore.shouldSkip(cycle: 8, failureCount: 5))
         #expect(UsageStore.shouldSkip(cycle: 12, failureCount: 5))
     }
+
+    @Test func backoffSurvivesHugeFailureCounts() {
+        // `1 << 63` overflows to Int.min and `1 << 64` to 0 (`cycle % 0` traps);
+        // huge counts must behave exactly like the capped every-8th schedule.
+        for failures in [63, 64, 100, Int.max] {
+            #expect(!UsageStore.shouldSkip(cycle: 0, failureCount: failures))
+            #expect(!UsageStore.shouldSkip(cycle: 8, failureCount: failures))
+            #expect(!UsageStore.shouldSkip(cycle: 16, failureCount: failures))
+            #expect(UsageStore.shouldSkip(cycle: 7, failureCount: failures))
+            #expect(UsageStore.shouldSkip(cycle: 9, failureCount: failures))
+        }
+    }
 }
