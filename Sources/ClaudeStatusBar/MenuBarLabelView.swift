@@ -39,7 +39,7 @@ struct MenuBarLabelView: View {
               let url = bundle.url(forResource: "clawd/\(icon.rawValue)", withExtension: "png"),
               let nsImage = NSImage(contentsOf: url)
         else { return nil }
-        nsImage.size = NSSize(width: 18, height: 18)
+        nsImage.size = NSSize(width: 20, height: 20)
         imageCache[icon] = nsImage
         return nsImage
     }
