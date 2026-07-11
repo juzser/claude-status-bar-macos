@@ -42,7 +42,7 @@ final class AppState {
         self.settings = settings ?? SettingsStore()
         self.usageStore = UsageStore(fetcher: UsageClient(), cacheFile: paths.usageCacheFile)
         self.currentVerb = ThinkingVerbs.all[0]
-        self.currentVerb = verbCycler.next()
+        self.currentVerb = verbCycler.next(from: ThinkingVerbs.all)
     }
 
     func start() {
@@ -79,7 +79,7 @@ final class AppState {
         let previous = display?.state
         display = SessionAggregator.displayState(sessions)
         if display?.state == .thinking, previous != .thinking {
-            currentVerb = verbCycler.next()
+            currentVerb = verbCycler.next(from: ThinkingVerbs.all)
         }
     }
 

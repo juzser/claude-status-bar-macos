@@ -87,17 +87,42 @@ private func usage(five: Double, seven: Double) -> AccountUsageState {
     @Test func neverRepeatsImmediately() {
         // rng always returns 0 -> would always pick index 0 without the no-repeat rule
         var cycler = VerbCycler(rng: { 0 })
-        let first = cycler.next()
-        let second = cycler.next()
+        let first = cycler.next(from: ThinkingVerbs.all)
+        let second = cycler.next(from: ThinkingVerbs.all)
         #expect(first != second)
 
         var random = VerbCycler()
-        var previous = random.next()
+        var previous = random.next(from: ThinkingVerbs.all)
         for _ in 0..<200 {
-            let verb = random.next()
+            let verb = random.next(from: ThinkingVerbs.all)
             #expect(verb != previous)
             #expect(ThinkingVerbs.all.contains(verb))
             previous = verb
         }
+    }
+
+    @Test func stalePreviousIndexIsForgottenOnSmallerPool() {
+        // rng 0.99 picks the last index: 4 in the big pool — out of range for
+        // the small pool. Must be treated as nil, never index out of bounds.
+        var cycler = VerbCycler(rng: { 0.99 })
+        let big = ["a", "b", "c", "d", "e"]
+        #expect(cycler.next(from: big) == "e")
+        let small = ["x", "y"]
+        let pick = cycler.next(from: small)
+        #expect(small.contains(pick))
+    }
+
+    @Test func singlePhrasePoolRepeatsWithoutCrashing() {
+        var cycler = VerbCycler(rng: { 0 })
+        #expect(cycler.next(from: ["only"]) == "only")
+        #expect(cycler.next(from: ["only"]) == "only")
+    }
+
+    @Test func resetClearsNoRepeatMemory() {
+        // rng 0 always picks index 0; after reset() the same phrase may repeat.
+        var cycler = VerbCycler(rng: { 0 })
+        let first = cycler.next(from: ThinkingVerbs.all)
+        cycler.reset()
+        #expect(cycler.next(from: ThinkingVerbs.all) == first)
     }
 }
