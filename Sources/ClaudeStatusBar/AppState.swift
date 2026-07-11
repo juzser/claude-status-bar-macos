@@ -42,7 +42,7 @@ final class AppState {
         self.settings = settings ?? SettingsStore()
         self.usageStore = UsageStore(fetcher: UsageClient(), cacheFile: paths.usageCacheFile)
         self.currentVerb = ThinkingVerbs.all[0]
-        self.currentVerb = verbCycler.next(from: ThinkingVerbs.all)
+        self.currentVerb = verbCycler.next(from: self.settings.messageStyle.thinking)
     }
 
     func start() {
@@ -79,8 +79,16 @@ final class AppState {
         let previous = display?.state
         display = SessionAggregator.displayState(sessions)
         if display?.state == .thinking, previous != .thinking {
-            currentVerb = verbCycler.next(from: ThinkingVerbs.all)
+            currentVerb = verbCycler.next(from: settings.messageStyle.thinking)
         }
+    }
+
+    /// Called when the user picks a new message style: forget the no-repeat
+    /// memory (it indexes the old pool) and re-pick so a bar currently in
+    /// .thinking re-renders with the new style at once.
+    func rerollThinkingPhrase() {
+        verbCycler.reset()
+        currentVerb = verbCycler.next(from: settings.messageStyle.thinking)
     }
 
     func refreshUsageNow() async {
