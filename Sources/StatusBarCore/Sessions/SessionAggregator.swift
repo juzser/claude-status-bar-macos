@@ -28,11 +28,14 @@ public enum SessionAggregator {
 }
 
 extension SessionState {
+    /// Busy states outrank waiting: waiting is every open tab's resting
+    /// state, so ranking it on top would permanently mask live work
+    /// whenever more than one session exists.
     var priority: Int {
         switch self {
-        case .waiting: return 3
-        case .tool: return 2
-        case .thinking: return 1
+        case .tool: return 3
+        case .thinking: return 2
+        case .waiting: return 1
         case .idle: return 0
         }
     }

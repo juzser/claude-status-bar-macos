@@ -48,7 +48,11 @@ private func record(id: String, state: SessionState, startedAt: Date,
         let waiting = record(id: "d", state: .waiting, startedAt: now, updatedAt: now)
         #expect(SessionAggregator.displayState([idle, thinking])?.sessionId == "b")
         #expect(SessionAggregator.displayState([thinking, tool])?.sessionId == "c")
-        #expect(SessionAggregator.displayState([tool, waiting, idle])?.sessionId == "d")
+        // Busy beats waiting: with several tabs open, some session is almost
+        // always sitting on the user — it must not mask live work.
+        #expect(SessionAggregator.displayState([tool, waiting, idle])?.sessionId == "c")
+        #expect(SessionAggregator.displayState([thinking, waiting])?.sessionId == "b")
+        #expect(SessionAggregator.displayState([idle, waiting])?.sessionId == "d")
         #expect(SessionAggregator.displayState([]) == nil)
     }
 
