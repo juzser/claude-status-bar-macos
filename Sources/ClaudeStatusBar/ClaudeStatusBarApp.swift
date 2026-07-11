@@ -16,7 +16,8 @@ struct ClaudeStatusBarApp: App {
             PopoverView(appState: appState)
         } label: {
             MenuBarLabelView(model: appState.labelModel,
-                             icon: StatusIcon.icon(for: appState.display))
+                             icon: StatusIcon.icon(for: appState.display),
+                             shimmerPhase: ShimmerText.phase(at: appState.tick))
                 .onAppear {
                     appState.start()
                     Task { await appState.refreshUsageNow() }

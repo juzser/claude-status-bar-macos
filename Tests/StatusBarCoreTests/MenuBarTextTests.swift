@@ -31,11 +31,22 @@ private func usage(five: Double, seven: Double) -> AccountUsageState {
 @Suite struct MenuBarTextTests {
     private func model(display: SessionRecord?, usage: AccountUsageState?,
                        style: DisplayStyle, showUsage: Bool = true,
+                       showElapsed: Bool = true,
                        messageStyle: MessageStyle = MessageStyles.style(id: "classic"))
         -> MenuBarLabelModel {
         MenuBarText.model(display: display, usage: usage, style: style,
-                          showUsage: showUsage, yellowAt: 50, redAt: 80,
+                          showUsage: showUsage, showElapsed: showElapsed,
+                          yellowAt: 50, redAt: 80,
                           verb: "Pondering", messageStyle: messageStyle, now: now)
+    }
+
+    @Test func hidingElapsedDropsTimeFromActivity() {
+        let tool = model(display: session(.tool, label: "Running", busyFor: 192),
+                         usage: nil, style: .full, showElapsed: false)
+        #expect(tool.activityText == "Running")
+        let thinking = model(display: session(.thinking, busyFor: 45),
+                             usage: nil, style: .full, showElapsed: false)
+        #expect(thinking.activityText == "Pondering…")
     }
 
     @Test func toolStateShowsLabelAndElapsed() {

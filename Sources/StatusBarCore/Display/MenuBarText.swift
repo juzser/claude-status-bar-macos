@@ -18,6 +18,7 @@ public struct MenuBarLabelModel: Equatable, Sendable {
 public enum MenuBarText {
     public static func model(display: SessionRecord?, usage: AccountUsageState?,
                              style: DisplayStyle, showUsage: Bool,
+                             showElapsed: Bool = true,
                              yellowAt: Double, redAt: Double,
                              verb: String, messageStyle: MessageStyle,
                              now: Date) -> MenuBarLabelModel {
@@ -25,7 +26,9 @@ public enum MenuBarText {
 
         var activity: String?
         if style != .iconOnly, style != .compact, let display {
-            let time = display.busySince.map { elapsed(now.timeIntervalSince($0)) }
+            let time = showElapsed
+                ? display.busySince.map { elapsed(now.timeIntervalSince($0)) }
+                : nil
             switch display.state {
             case .tool:
                 let label = display.label ?? "Working"

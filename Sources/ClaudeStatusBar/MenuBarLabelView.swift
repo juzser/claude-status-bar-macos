@@ -4,34 +4,44 @@ import StatusBarCore
 struct MenuBarLabelView: View {
     let model: MenuBarLabelModel
     let icon: ClawdIcon
+    var shimmerPhase: Double = 0
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         // MenuBarExtra labels render Text + Image only; colors are flattened
         // to template by the system, so levels are shown via dots in the popover,
-        // not here.
+        // not here — and the shimmer must be baked into an NSImage.
         HStack(spacing: 4) {
             if model.textLeading {
                 // [activity][icon][usage]: the status item is right-anchored,
                 // so icon + % stay put while the text grows leftward.
-                if let activity = model.activityText {
-                    Text(activity)
-                }
+                activityView
                 iconImage
                 if let usage = model.usageText {
                     Text(usage).monospacedDigit()
                 }
             } else {
                 iconImage
-                if let text = barText {
-                    Text(text).monospacedDigit()
+                activityView
+                if let usage = model.usageText {
+                    Text(usage).monospacedDigit()
                 }
             }
         }
     }
 
-    private var barText: String? {
-        let parts = [model.activityText, model.usageText].compactMap(\.self)
-        return parts.isEmpty ? nil : parts.joined(separator: "  ")
+    /// Busy states shimmer; waiting stays plain text (no motion while the
+    /// session sits on the user).
+    @ViewBuilder private var activityView: some View {
+        if let activity = model.activityText {
+            if model.state == .thinking || model.state == .tool {
+                Image(nsImage: ShimmerText.image(activity, phase: shimmerPhase,
+                                                 dark: colorScheme == .dark))
+                    .renderingMode(.original)
+            } else {
+                Text(activity)
+            }
+        }
     }
 
     @ViewBuilder private var iconImage: some View {

@@ -13,6 +13,7 @@ import Testing
     @Test func defaults() {
         let store = SettingsStore(defaults: makeDefaults())
         #expect(store.showUsageOnBar == true)
+        #expect(store.showElapsedOnBar == true)
         #expect(store.displayStyle == .full)
         #expect(store.pollMinutes == 5)
         #expect(store.yellowAt == 50)
@@ -24,6 +25,7 @@ import Testing
         let defaults = makeDefaults()
         let store = SettingsStore(defaults: defaults)
         store.showUsageOnBar = false
+        store.showElapsedOnBar = false
         store.displayStyle = .percent
         store.pollMinutes = 15
         store.yellowAt = 40
@@ -32,6 +34,7 @@ import Testing
 
         let reloaded = SettingsStore(defaults: defaults)
         #expect(reloaded.showUsageOnBar == false)
+        #expect(reloaded.showElapsedOnBar == false)
         #expect(reloaded.displayStyle == .percent)
         #expect(reloaded.pollMinutes == 15)
         #expect(reloaded.yellowAt == 40)

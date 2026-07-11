@@ -32,6 +32,7 @@ final class AppState {
     private var pollTask: Task<Void, Never>?
     private var reaggregateTask: Task<Void, Never>?
     private var tickTask: Task<Void, Never>?
+    private var tickInterval: Duration = .seconds(1)
     private var pollCycle = 0
     private var started = false
 
@@ -109,18 +110,24 @@ final class AppState {
         }
     }
 
-    /// Drives the elapsed counter at 1 Hz while a session is busy. A plain
-    /// task loop, not TimelineView: a periodic TimelineView in the MenuBarExtra
-    /// label re-anchors its schedule at `.now` on every label re-render, so the
-    /// first entry is always already due — the main thread spins at 100% CPU
-    /// and the status item never finishes appearing (observed on macOS 26).
+    /// Drives the elapsed counter and shimmer while a session is busy — 8 fps
+    /// when activity text is on the bar (the shimmer needs sub-second frames),
+    /// 1 Hz for icon-only/compact styles. A plain task loop, not TimelineView:
+    /// a periodic TimelineView in the MenuBarExtra label re-anchors its
+    /// schedule at `.now` on every label re-render, so the first entry is
+    /// always already due — the main thread spins at 100% CPU and the status
+    /// item never finishes appearing (observed on macOS 26).
     private func updateTicker() {
         if display?.busySince != nil {
-            guard tickTask == nil else { return }
+            let interval: Duration = displayStyle == .iconOnly || displayStyle == .compact
+                ? .seconds(1) : .milliseconds(125)
+            guard tickTask == nil || interval != tickInterval else { return }
+            tickTask?.cancel()
+            tickInterval = interval
             tick = Date()
             tickTask = Task { [weak self] in
                 while !Task.isCancelled {
-                    try? await Task.sleep(for: .seconds(1))
+                    try? await Task.sleep(for: interval)
                     self?.tick = Date()
                 }
             }
@@ -158,6 +165,7 @@ final class AppState {
             ?? accounts.first.flatMap { usageStore.states[$0.id] }
         return MenuBarText.model(display: display, usage: activeUsage,
                                  style: displayStyle, showUsage: showUsageOnBar,
+                                 showElapsed: settings.showElapsedOnBar,
                                  yellowAt: yellowAt, redAt: redAt,
                                  verb: currentVerb, messageStyle: settings.messageStyle,
                                  now: tick)

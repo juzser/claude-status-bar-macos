@@ -10,6 +10,9 @@ public final class SettingsStore {
     public var showUsageOnBar: Bool {
         didSet { defaults.set(showUsageOnBar, forKey: "showUsageOnBar") }
     }
+    public var showElapsedOnBar: Bool {
+        didSet { defaults.set(showElapsedOnBar, forKey: "showElapsedOnBar") }
+    }
     public var displayStyleRaw: String {
         didSet { defaults.set(displayStyleRaw, forKey: "displayStyleRaw") }
     }
@@ -43,6 +46,7 @@ public final class SettingsStore {
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         showUsageOnBar = defaults.object(forKey: "showUsageOnBar") as? Bool ?? true
+        showElapsedOnBar = defaults.object(forKey: "showElapsedOnBar") as? Bool ?? true
         displayStyleRaw = defaults.string(forKey: "displayStyleRaw") ?? DisplayStyle.full.rawValue
         pollMinutes = defaults.object(forKey: "pollMinutes") as? Int ?? 5
         yellowAt = defaults.object(forKey: "yellowAt") as? Double ?? 50
