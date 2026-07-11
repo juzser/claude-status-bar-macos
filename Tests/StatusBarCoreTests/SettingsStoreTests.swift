@@ -44,6 +44,31 @@ import Testing
         defaults.set("hologram", forKey: "displayStyleRaw")
         #expect(SettingsStore(defaults: defaults).displayStyle == .full)
     }
+
+    @Test func messageStyleDefaultsToClassic() {
+        let store = SettingsStore(defaults: makeDefaults())
+        #expect(store.messageStyleId == "classic")
+        #expect(store.messageStyle.id == "classic")
+    }
+
+    @Test func messageStyleIdPersistsAcrossInstances() {
+        let defaults = makeDefaults()
+        let store = SettingsStore(defaults: defaults)
+        store.messageStyleId = "pirate"
+        let reloaded = SettingsStore(defaults: defaults)
+        #expect(reloaded.messageStyleId == "pirate")
+        #expect(reloaded.messageStyle.id == "pirate")
+    }
+
+    @Test func unknownMessageStyleIdResolvesToClassicWithoutWriteBack() {
+        let defaults = makeDefaults()
+        defaults.set("vaporwave", forKey: "messageStyleId")
+        let store = SettingsStore(defaults: defaults)
+        #expect(store.messageStyle.id == "classic")
+        // The raw value is preserved — never rewritten to "classic".
+        #expect(store.messageStyleId == "vaporwave")
+        #expect(defaults.string(forKey: "messageStyleId") == "vaporwave")
+    }
 }
 
 @Suite struct HookLocatorTests {
