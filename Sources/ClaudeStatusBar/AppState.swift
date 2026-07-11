@@ -94,7 +94,8 @@ final class AppState {
         return MenuBarText.model(display: display, usage: activeUsage,
                                  style: displayStyle, showUsage: showUsageOnBar,
                                  yellowAt: yellowAt, redAt: redAt,
-                                 verb: currentVerb, now: Date())
+                                 verb: currentVerb, messageStyle: settings.messageStyle,
+                                 now: Date())
     }
 
     private func pollOnce() async {

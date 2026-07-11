@@ -30,10 +30,12 @@ private func usage(five: Double, seven: Double) -> AccountUsageState {
 
 @Suite struct MenuBarTextTests {
     private func model(display: SessionRecord?, usage: AccountUsageState?,
-                       style: DisplayStyle, showUsage: Bool = true) -> MenuBarLabelModel {
+                       style: DisplayStyle, showUsage: Bool = true,
+                       messageStyle: MessageStyle = MessageStyles.style(id: "classic"))
+        -> MenuBarLabelModel {
         MenuBarText.model(display: display, usage: usage, style: style,
                           showUsage: showUsage, yellowAt: 50, redAt: 80,
-                          verb: "Pondering", now: now)
+                          verb: "Pondering", messageStyle: messageStyle, now: now)
     }
 
     @Test func toolStateShowsLabelAndElapsed() {
@@ -75,6 +77,44 @@ private func usage(five: Double, seven: Double) -> AccountUsageState {
         #expect(m.fiveHourLevel == .red)
         #expect(m.sevenDayLevel == .yellow)
         #expect(model(display: nil, usage: nil, style: .full).fiveHourLevel == nil)
+    }
+
+    @Test func toolLabelThemedByStyle() {
+        let m = model(display: session(.tool, label: "Editing", busyFor: 192),
+                      usage: nil, style: .full,
+                      messageStyle: MessageStyles.style(id: "rpg"))
+        #expect(m.activityText == "Forging the blade · 3m 12s")
+    }
+
+    @Test func unknownToolLabelPassesThroughUnthemed() {
+        // Capitalized raw tool names from the hook fallback (e.g. WebFetch)
+        // are not in any style's map — they render as-is.
+        let m = model(display: session(.tool, label: "WebFetch", busyFor: 45),
+                      usage: nil, style: .full,
+                      messageStyle: MessageStyles.style(id: "pirate"))
+        #expect(m.activityText == "WebFetch · 45s")
+    }
+
+    @Test func missingLabelThemedAsWorking() {
+        let m = model(display: session(.tool, busyFor: 45), usage: nil, style: .full,
+                      messageStyle: MessageStyles.style(id: "scifi"))
+        #expect(m.activityText == "Running ship diagnostics · 45s")
+    }
+
+    @Test func waitingUsesStylePhrase() {
+        let m = model(display: session(.waiting, busyFor: 45), usage: nil, style: .full,
+                      messageStyle: MessageStyles.style(id: "cooking"))
+        #expect(m.activityText == "Order up, chef")
+    }
+
+    @Test func classicRendersByteIdenticalToV1() {
+        let tool = model(display: session(.tool, label: "Editing", busyFor: 12),
+                         usage: nil, style: .full)
+        #expect(tool.activityText == "Editing · 12s")
+        let waiting = model(display: session(.waiting, busyFor: 12), usage: nil, style: .full)
+        #expect(waiting.activityText == "Waiting for you")
+        let thinking = model(display: session(.thinking, busyFor: 12), usage: nil, style: .full)
+        #expect(thinking.activityText == "Pondering… · 12s")
     }
 }
 

@@ -16,7 +16,8 @@ public enum MenuBarText {
     public static func model(display: SessionRecord?, usage: AccountUsageState?,
                              style: DisplayStyle, showUsage: Bool,
                              yellowAt: Double, redAt: Double,
-                             verb: String, now: Date) -> MenuBarLabelModel {
+                             verb: String, messageStyle: MessageStyle,
+                             now: Date) -> MenuBarLabelModel {
         let state = display?.state ?? .idle
 
         var activity: String?
@@ -25,11 +26,12 @@ public enum MenuBarText {
             switch display.state {
             case .tool:
                 let label = display.label ?? "Working"
-                activity = time.map { "\(label) · \($0)" } ?? label
+                let phrase = messageStyle.tool[label] ?? label
+                activity = time.map { "\(phrase) · \($0)" } ?? phrase
             case .thinking:
                 activity = time.map { "\(verb)… · \($0)" } ?? "\(verb)…"
             case .waiting:
-                activity = "Waiting for you"
+                activity = messageStyle.waiting
             case .idle:
                 activity = nil
             }
