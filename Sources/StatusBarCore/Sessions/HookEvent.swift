@@ -5,6 +5,7 @@ public struct HookEvent: Sendable {
     public let sessionId: String
     public let cwd: String?
     public let toolName: String?
+    public let transcriptPath: String?
 
     private static let allowedIdCharacters = CharacterSet(
         charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_")
@@ -25,7 +26,8 @@ public struct HookEvent: Sendable {
         }
         return HookEvent(name: name, sessionId: id,
                          cwd: obj["cwd"] as? String,
-                         toolName: obj["tool_name"] as? String)
+                         toolName: obj["tool_name"] as? String,
+                         transcriptPath: obj["transcript_path"] as? String)
     }
 }
 

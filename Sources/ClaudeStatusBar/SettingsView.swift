@@ -42,11 +42,16 @@ private struct GeneralTab: View {
                     }
                 }
             Toggle("Show usage on menu bar", isOn: $settings.showUsageOnBar)
+            Toggle("Show elapsed time on menu bar", isOn: $settings.showElapsedOnBar)
+            // 🦀 stands in for the Clawd icon in each sample.
             Picker("Display style", selection: $settings.displayStyle) {
-                Text("Icon only").tag(DisplayStyle.iconOnly)
-                Text("Icon + %").tag(DisplayStyle.percent)
-                Text("Full").tag(DisplayStyle.full)
+                Text("Icon only — 🦀").tag(DisplayStyle.iconOnly)
+                Text("Compact — 🦀 71%").tag(DisplayStyle.compact)
+                Text("Standard — 🦀 Working · 3s  71%").tag(DisplayStyle.percent)
+                Text("Text first — Working · 3s 🦀 71%").tag(DisplayStyle.textFirst)
+                Text("Full — 🦀 Working · 3s  5h 71% · 7d 29%").tag(DisplayStyle.full)
             }
+            .pickerStyle(.radioGroup)
             Picker("Message style", selection: $settings.messageStyleId) {
                 ForEach(MessageStyles.all) { style in
                     Text(style.name).tag(style.id)
@@ -54,8 +59,8 @@ private struct GeneralTab: View {
             }
             .onChange(of: settings.messageStyleId) {
                 // Instant feedback: a bar currently in .thinking re-renders
-                // now; tool/waiting text re-themes on the next TimelineView
-                // tick (≤1 s).
+                // now; tool/waiting text re-themes on the next elapsed tick
+                // (≤1 s).
                 appState.rerollThinkingPhrase()
             }
             Picker("Usage poll interval", selection: $settings.pollMinutes) {

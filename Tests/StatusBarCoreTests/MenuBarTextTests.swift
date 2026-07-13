@@ -31,11 +31,22 @@ private func usage(five: Double, seven: Double) -> AccountUsageState {
 @Suite struct MenuBarTextTests {
     private func model(display: SessionRecord?, usage: AccountUsageState?,
                        style: DisplayStyle, showUsage: Bool = true,
+                       showElapsed: Bool = true,
                        messageStyle: MessageStyle = MessageStyles.style(id: "classic"))
         -> MenuBarLabelModel {
         MenuBarText.model(display: display, usage: usage, style: style,
-                          showUsage: showUsage, yellowAt: 50, redAt: 80,
+                          showUsage: showUsage, showElapsed: showElapsed,
+                          yellowAt: 50, redAt: 80,
                           verb: "Pondering", messageStyle: messageStyle, now: now)
+    }
+
+    @Test func hidingElapsedDropsTimeFromActivity() {
+        let tool = model(display: session(.tool, label: "Running", busyFor: 192),
+                         usage: nil, style: .full, showElapsed: false)
+        #expect(tool.activityText == "Running")
+        let thinking = model(display: session(.thinking, busyFor: 45),
+                             usage: nil, style: .full, showElapsed: false)
+        #expect(thinking.activityText == "Pondering…")
     }
 
     @Test func toolStateShowsLabelAndElapsed() {
@@ -72,11 +83,55 @@ private func usage(five: Double, seven: Double) -> AccountUsageState {
         #expect(model(display: nil, usage: nil, style: .full).usageText == nil)
     }
 
+    @Test func compactShowsPercentOnlyNoActivity() {
+        let m = model(display: session(.tool, label: "Running", busyFor: 10),
+                      usage: usage(five: 70.6, seven: 29.2), style: .compact)
+        #expect(m.activityText == nil)
+        #expect(m.usageText == "71%")
+        #expect(m.textLeading == false)
+    }
+
+    @Test func textFirstLeadsWithActivity() {
+        let m = model(display: session(.tool, label: "Running", busyFor: 192),
+                      usage: usage(five: 70.6, seven: 29.2), style: .textFirst)
+        #expect(m.activityText == "Running · 3m 12s")
+        #expect(m.usageText == "71%")
+        #expect(m.textLeading == true)
+    }
+
+    @Test func onlyTextFirstLeadsWithText() {
+        for style in [DisplayStyle.iconOnly, .compact, .percent, .full] {
+            #expect(model(display: nil, usage: nil, style: style).textLeading == false)
+        }
+    }
+
     @Test func levelsComputedFromThresholds() {
         let m = model(display: nil, usage: usage(five: 85, seven: 55), style: .full)
         #expect(m.fiveHourLevel == .red)
         #expect(m.sevenDayLevel == .yellow)
         #expect(model(display: nil, usage: nil, style: .full).fiveHourLevel == nil)
+    }
+
+    @Test func usageLevelMatchesFiveHourForTextStyles() {
+        // 5h red, 7d green — percent/compact/textFirst only surface the 5h
+        // number, so usageLevel must track it, not the (greener) 7d figure.
+        let u = usage(five: 85, seven: 20)
+        #expect(model(display: nil, usage: u, style: .percent).usageLevel == .red)
+        #expect(model(display: nil, usage: u, style: .compact).usageLevel == .red)
+        #expect(model(display: nil, usage: u, style: .textFirst).usageLevel == .red)
+    }
+
+    @Test func usageLevelIsWorseOfBothForFullStyle() {
+        // .full shows both numbers in one string, so usageLevel should be
+        // whichever window is more severe, regardless of which one it is.
+        #expect(model(display: nil, usage: usage(five: 30, seven: 85), style: .full).usageLevel == .red)
+        #expect(model(display: nil, usage: usage(five: 85, seven: 30), style: .full).usageLevel == .red)
+        #expect(model(display: nil, usage: usage(five: 60, seven: 55), style: .full).usageLevel == .yellow)
+    }
+
+    @Test func usageLevelNilWhenNoUsageOrIconOnly() {
+        #expect(model(display: nil, usage: nil, style: .full).usageLevel == nil)
+        #expect(model(display: nil, usage: usage(five: 85, seven: 20), style: .iconOnly).usageLevel == nil)
     }
 
     @Test func toolLabelThemedByStyle() {

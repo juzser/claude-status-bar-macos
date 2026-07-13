@@ -3,6 +3,8 @@ import StatusBarCore
 
 struct SessionsSection: View {
     let sessions: [SessionRecord]
+    /// sessionId -> Claude Code session title; falls back to the folder name.
+    let titles: [String: String]
     let now: Date
 
     var body: some View {
@@ -14,9 +16,13 @@ struct SessionsSection: View {
             } else {
                 ForEach(sessions, id: \.sessionId) { session in
                     HStack {
-                        Text(projectName(session.cwd)).fontWeight(.medium)
-                        Spacer()
+                        Text(titles[session.sessionId] ?? projectName(session.cwd))
+                            .fontWeight(.medium)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        Spacer(minLength: 8)
                         Text(stateText(session)).foregroundStyle(.secondary)
+                            .layoutPriority(1)
                     }
                     .font(.callout)
                 }

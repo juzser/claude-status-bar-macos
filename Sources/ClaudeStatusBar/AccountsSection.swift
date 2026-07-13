@@ -7,17 +7,21 @@ struct AccountsSection: View {
     let yellowAt: Double
     let redAt: Double
     let now: Date
+    let onSwitch: (Account) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Accounts").font(.caption).foregroundStyle(.secondary)
             if accounts.isEmpty {
-                Text("No Claude account found — log in with cux or Claude Code")
+                Text(CuxAvailability.isInstalled()
+                     ? "No Claude account found — log in with cux or Claude Code"
+                     : "No Claude account found — log in with claude /login")
                     .font(.callout).foregroundStyle(.secondary)
             } else {
                 ForEach(accounts) { account in
                     AccountRow(account: account, state: states[account.id],
-                               yellowAt: yellowAt, redAt: redAt, now: now)
+                               yellowAt: yellowAt, redAt: redAt, now: now,
+                               showActiveBadge: accounts.count > 1, onSwitch: onSwitch)
                 }
             }
         }
@@ -30,6 +34,8 @@ private struct AccountRow: View {
     let yellowAt: Double
     let redAt: Double
     let now: Date
+    let showActiveBadge: Bool
+    let onSwitch: (Account) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -39,14 +45,24 @@ private struct AccountRow: View {
                 if account.alias != nil, let email = account.email {
                     Text(email).font(.caption).foregroundStyle(.secondary)
                 }
-                if account.isActive {
+                if account.isActive && showActiveBadge {
                     Text("active").font(.caption2).padding(.horizontal, 4)
                         .background(.tint.opacity(0.2), in: Capsule())
+                }
+                if !account.isActive && account.slot != nil && showActiveBadge {
+                    Button("Switch") { onSwitch(account) }
+                        .controlSize(.small)
                 }
                 Spacer()
                 if state?.needsRelogin == true {
                     Label("re-login needed", systemImage: "exclamationmark.triangle")
                         .font(.caption2).foregroundStyle(.orange)
+                    Button("Log in") { TerminalLauncher.run(ReloginCommand.command(for: account)) }
+                        .controlSize(.small)
+                } else if state?.freshness == .fresh {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.caption2).foregroundStyle(.green)
+                        .help("Logged in")
                 }
             }
             if let snapshot = state?.snapshot {

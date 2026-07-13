@@ -6,22 +6,22 @@ struct ClaudeStatusBarApp: App {
     @State private var appState = AppState()
 
     init() {
-        NSApp.setActivationPolicy(.accessory)
+        // NSApp is still nil this early in the SwiftUI App lifecycle;
+        // NSApplication.shared creates the app object on first access.
+        NSApplication.shared.setActivationPolicy(.accessory)
     }
 
     var body: some Scene {
         MenuBarExtra {
             PopoverView(appState: appState)
         } label: {
-            // TimelineView ticks the elapsed counter while a session is busy.
-            TimelineView(.periodic(from: .now, by: 1)) { _ in
-                MenuBarLabelView(model: appState.labelModel,
-                                 icon: StatusIcon.icon(for: appState.display))
-            }
-            .onAppear {
-                appState.start()
-                Task { await appState.refreshUsageNow() }
-            }
+            MenuBarLabelView(model: appState.labelModel,
+                             icon: StatusIcon.icon(for: appState.display),
+                             shimmerPhase: ShimmerText.phase(at: appState.tick))
+                .onAppear {
+                    appState.start()
+                    Task { await appState.refreshUsageNow() }
+                }
         }
         .menuBarExtraStyle(.window)
 

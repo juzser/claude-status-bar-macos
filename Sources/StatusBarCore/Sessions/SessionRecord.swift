@@ -12,6 +12,9 @@ public struct SessionRecord: Codable, Equatable, Sendable {
     public var startedAt: Date
     public var busySince: Date?
     public var updatedAt: Date
+    /// Claude Code transcript file for this session; records written by
+    /// older builds lack the key, so it must default to nil.
+    public var transcriptPath: String? = nil
 
     public static func decode(_ data: Data) throws -> SessionRecord {
         let decoder = JSONDecoder()
@@ -36,6 +39,7 @@ public enum SessionReducer {
             sessionId: event.sessionId, state: .idle, label: nil,
             cwd: event.cwd ?? "", startedAt: now, busySince: nil, updatedAt: now)
         if let cwd = event.cwd, !cwd.isEmpty { record.cwd = cwd }
+        if let path = event.transcriptPath, !path.isEmpty { record.transcriptPath = path }
         record.updatedAt = now
 
         switch event.name {

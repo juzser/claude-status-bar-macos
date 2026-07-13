@@ -1,7 +1,7 @@
 import Foundation
 
 public enum DisplayStyle: String, CaseIterable, Sendable {
-    case iconOnly, percent, full
+    case iconOnly, compact, percent, textFirst, full
 }
 
 public struct MenuBarLabelModel: Equatable, Sendable {
@@ -10,19 +10,29 @@ public struct MenuBarLabelModel: Equatable, Sendable {
     public let usageText: String?
     public let fiveHourLevel: UsageLevel?
     public let sevenDayLevel: UsageLevel?
+    /// Severity backing `usageText`'s color: the 5h level for styles that
+    /// only surface the 5h number, or the worse of the two for `.full`
+    /// (which shows both numbers in one string).
+    public let usageLevel: UsageLevel?
+    /// textFirst renders [activity][icon][usage]; every other style leads
+    /// with the icon.
+    public let textLeading: Bool
 }
 
 public enum MenuBarText {
     public static func model(display: SessionRecord?, usage: AccountUsageState?,
                              style: DisplayStyle, showUsage: Bool,
+                             showElapsed: Bool = true,
                              yellowAt: Double, redAt: Double,
                              verb: String, messageStyle: MessageStyle,
                              now: Date) -> MenuBarLabelModel {
         let state = display?.state ?? .idle
 
         var activity: String?
-        if style != .iconOnly, let display {
-            let time = display.busySince.map { elapsed(now.timeIntervalSince($0)) }
+        if style != .iconOnly, style != .compact, let display {
+            let time = showElapsed
+                ? display.busySince.map { elapsed(now.timeIntervalSince($0)) }
+                : nil
             switch display.state {
             case .tool:
                 let label = display.label ?? "Working"
@@ -38,6 +48,7 @@ public enum MenuBarText {
         }
 
         var usageText: String?
+        var usageLevel: UsageLevel?
         var fiveLevel: UsageLevel?
         var sevenLevel: UsageLevel?
         if showUsage, style != .iconOnly, let snapshot = usage?.snapshot {
@@ -50,12 +61,14 @@ public enum MenuBarText {
                 UsageLevel.level(for: $0.utilization, yellowAt: yellowAt, redAt: redAt)
             }
             switch style {
-            case .percent:
+            case .percent, .compact, .textFirst:
                 usageText = five.map { "\($0)%" }
+                usageLevel = fiveLevel
             case .full:
                 let parts = [five.map { "5h \($0)%" }, seven.map { "7d \($0)%" }]
                     .compactMap(\.self)
                 usageText = parts.isEmpty ? nil : parts.joined(separator: " · ")
+                usageLevel = worse(fiveLevel, sevenLevel)
             case .iconOnly:
                 usageText = nil
             }
@@ -63,7 +76,27 @@ public enum MenuBarText {
 
         return MenuBarLabelModel(state: state, activityText: activity,
                                  usageText: usageText,
-                                 fiveHourLevel: fiveLevel, sevenDayLevel: sevenLevel)
+                                 fiveHourLevel: fiveLevel, sevenDayLevel: sevenLevel,
+                                 usageLevel: usageLevel,
+                                 textLeading: style == .textFirst)
+    }
+
+    /// The more severe of two levels (red > yellow > green); either side may
+    /// be nil when that usage window is unavailable.
+    private static func worse(_ a: UsageLevel?, _ b: UsageLevel?) -> UsageLevel? {
+        func rank(_ level: UsageLevel) -> Int {
+            switch level {
+            case .green: return 0
+            case .yellow: return 1
+            case .red: return 2
+            }
+        }
+        switch (a, b) {
+        case (nil, nil): return nil
+        case (let x?, nil): return x
+        case (nil, let y?): return y
+        case (let x?, let y?): return rank(x) >= rank(y) ? x : y
+        }
     }
 
     public static func elapsed(_ interval: TimeInterval) -> String {
