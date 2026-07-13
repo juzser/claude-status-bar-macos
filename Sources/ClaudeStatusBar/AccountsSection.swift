@@ -12,12 +12,15 @@ struct AccountsSection: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Accounts").font(.caption).foregroundStyle(.secondary)
             if accounts.isEmpty {
-                Text("No Claude account found — log in with cux or Claude Code")
+                Text(CuxAvailability.isInstalled()
+                     ? "No Claude account found — log in with cux or Claude Code"
+                     : "No Claude account found — log in with claude /login")
                     .font(.callout).foregroundStyle(.secondary)
             } else {
                 ForEach(accounts) { account in
                     AccountRow(account: account, state: states[account.id],
-                               yellowAt: yellowAt, redAt: redAt, now: now)
+                               yellowAt: yellowAt, redAt: redAt, now: now,
+                               showActiveBadge: accounts.count > 1)
                 }
             }
         }
@@ -30,6 +33,7 @@ private struct AccountRow: View {
     let yellowAt: Double
     let redAt: Double
     let now: Date
+    let showActiveBadge: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -39,7 +43,7 @@ private struct AccountRow: View {
                 if account.alias != nil, let email = account.email {
                     Text(email).font(.caption).foregroundStyle(.secondary)
                 }
-                if account.isActive {
+                if account.isActive && showActiveBadge {
                     Text("active").font(.caption2).padding(.horizontal, 4)
                         .background(.tint.opacity(0.2), in: Capsule())
                 }
