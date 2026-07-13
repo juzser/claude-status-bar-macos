@@ -1,11 +1,21 @@
 # Claude Status Bar for macOS
 
+<p align="center">
+  <img src="docs/screenshots/status-bar.gif" alt="Claude Status Bar showing Clawd activity and usage live in the macOS menu bar" width="420">
+</p>
+
 [![CI](https://github.com/juzser/claude-status-bar-macos/actions/workflows/ci.yml/badge.svg)](https://github.com/juzser/claude-status-bar-macos/actions/workflows/ci.yml)
 
 Native macOS menu bar app showing Claude usage and Claude Code activity at a
 glance. A clean-room Swift port of the idea behind
 [claude-status-bar-kde](https://github.com/vntrungld/claude-status-bar-kde),
 with multi-account support.
+
+<p align="center">
+  <img src="docs/screenshots/screenshot-1.png" alt="Menu bar label: activity text, Clawd icon, and usage percentage" width="380">
+  <br><br>
+  <img src="docs/screenshots/screenshot-2.png" alt="Popover: active Claude Code sessions and per-account 5h/7d usage bars" width="380">
+</p>
 
 ## Features
 
