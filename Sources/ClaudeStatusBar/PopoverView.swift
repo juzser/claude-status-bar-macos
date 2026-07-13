@@ -14,6 +14,7 @@ struct PopoverView: View {
                 AccountsSection(accounts: appState.visibleAccounts,
                                 states: appState.usageStore.states,
                                 yellowAt: appState.yellowAt, redAt: appState.redAt,
+                                normalColor: Color(hex: appState.settings.normalColorHex) ?? .green,
                                 now: context.date,
                                 onSwitch: { account in
                                     Task { await appState.switchAccount(account) }

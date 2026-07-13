@@ -6,6 +6,7 @@ struct AccountsSection: View {
     let states: [String: AccountUsageState]
     let yellowAt: Double
     let redAt: Double
+    let normalColor: Color
     let now: Date
     let onSwitch: (Account) -> Void
 
@@ -20,7 +21,7 @@ struct AccountsSection: View {
             } else {
                 ForEach(accounts) { account in
                     AccountRow(account: account, state: states[account.id],
-                               yellowAt: yellowAt, redAt: redAt, now: now,
+                               yellowAt: yellowAt, redAt: redAt, normalColor: normalColor, now: now,
                                showActiveBadge: accounts.count > 1, onSwitch: onSwitch)
                 }
             }
@@ -33,6 +34,7 @@ private struct AccountRow: View {
     let state: AccountUsageState?
     let yellowAt: Double
     let redAt: Double
+    let normalColor: Color
     let now: Date
     let showActiveBadge: Bool
     let onSwitch: (Account) -> Void
@@ -67,9 +69,9 @@ private struct AccountRow: View {
             }
             if let snapshot = state?.snapshot {
                 UsageBar(title: "5h", window: snapshot.fiveHour,
-                         yellowAt: yellowAt, redAt: redAt, now: now)
+                         yellowAt: yellowAt, redAt: redAt, normalColor: normalColor, now: now)
                 UsageBar(title: "7d", window: snapshot.sevenDay,
-                         yellowAt: yellowAt, redAt: redAt, now: now)
+                         yellowAt: yellowAt, redAt: redAt, normalColor: normalColor, now: now)
             } else {
                 Text("No usage data").font(.caption).foregroundStyle(.secondary)
             }
@@ -83,6 +85,7 @@ private struct UsageBar: View {
     let window: UsageWindow?
     let yellowAt: Double
     let redAt: Double
+    let normalColor: Color
     let now: Date
 
     var body: some View {
@@ -104,7 +107,7 @@ private struct UsageBar: View {
 
     private var color: Color {
         switch UsageLevel.level(for: window?.utilization ?? 0, yellowAt: yellowAt, redAt: redAt) {
-        case .green: return .green
+        case .green: return normalColor
         case .yellow: return .yellow
         case .red: return .red
         }
