@@ -43,6 +43,7 @@ private struct GeneralTab: View {
                 }
             Toggle("Show usage on menu bar", isOn: $settings.showUsageOnBar)
             Toggle("Show elapsed time on menu bar", isOn: $settings.showElapsedOnBar)
+            Toggle("Animate activity text", isOn: $settings.textAnimationEnabled)
             // 🦀 stands in for the Clawd icon in each sample.
             Picker("Display style", selection: $settings.displayStyle) {
                 Text("Icon only — 🦀").tag(DisplayStyle.iconOnly)

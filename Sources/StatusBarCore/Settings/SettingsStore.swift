@@ -31,10 +31,9 @@ public final class SettingsStore {
     public var messageStyleId: String {
         didSet { defaults.set(messageStyleId, forKey: "messageStyleId") }
     }
-    /// Hex ("#RRGGBB") for the "normal" (below-yellow) usage level; yellow
-    /// and red stay hardcoded system colors. Default is NSColor.systemGreen's
-    /// sRGB hex, so a fresh install renders identically to the old hardcoded
-    /// color.
+    /// Hex ("#RRGGBB") for the "normal" (below-yellow) usage level. Default is
+    /// NSColor.systemGreen's sRGB hex, so a fresh install renders identically
+    /// to the old hardcoded color.
     public var normalColorHex: String {
         didSet { defaults.set(normalColorHex, forKey: "normalColorHex") }
     }
@@ -49,6 +48,9 @@ public final class SettingsStore {
     /// identically to the old hardcoded color.
     public var redColorHex: String {
         didSet { defaults.set(redColorHex, forKey: "redColorHex") }
+    }
+    public var textAnimationEnabled: Bool {
+        didSet { defaults.set(textAnimationEnabled, forKey: "textAnimationEnabled") }
     }
 
     public var displayStyle: DisplayStyle {
@@ -75,5 +77,6 @@ public final class SettingsStore {
         normalColorHex = defaults.string(forKey: "normalColorHex") ?? "#34C759"
         yellowColorHex = defaults.string(forKey: "yellowColorHex") ?? "#FFCC00"
         redColorHex = defaults.string(forKey: "redColorHex") ?? "#FF3B30"
+        textAnimationEnabled = defaults.object(forKey: "textAnimationEnabled") as? Bool ?? true
     }
 }

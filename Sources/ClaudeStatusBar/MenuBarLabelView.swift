@@ -9,6 +9,7 @@ struct MenuBarLabelView: View {
     let normalColor: NSColor
     let yellowColor: NSColor
     let redColor: NSColor
+    let animateText: Bool
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -21,7 +22,8 @@ struct MenuBarLabelView: View {
                                             dark: colorScheme == .dark,
                                             normalColor: normalColor,
                                             yellowColor: yellowColor,
-                                            redColor: redColor))
+                                            redColor: redColor,
+                                            animateText: animateText))
             .renderingMode(.original)
     }
 }

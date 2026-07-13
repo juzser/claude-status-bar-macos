@@ -22,6 +22,7 @@ import Testing
         #expect(store.normalColorHex == "#34C759")
         #expect(store.yellowColorHex == "#FFCC00")
         #expect(store.redColorHex == "#FF3B30")
+        #expect(store.textAnimationEnabled == true)
     }
 
     @Test func persistsAcrossInstances() {
@@ -37,6 +38,7 @@ import Testing
         store.normalColorHex = "#112233"
         store.yellowColorHex = "#445566"
         store.redColorHex = "#778899"
+        store.textAnimationEnabled = false
 
         let reloaded = SettingsStore(defaults: defaults)
         #expect(reloaded.showUsageOnBar == false)
@@ -49,6 +51,7 @@ import Testing
         #expect(reloaded.normalColorHex == "#112233")
         #expect(reloaded.yellowColorHex == "#445566")
         #expect(reloaded.redColorHex == "#778899")
+        #expect(reloaded.textAnimationEnabled == false)
     }
 
     @Test func unknownDisplayStyleFallsBackToFull() {
