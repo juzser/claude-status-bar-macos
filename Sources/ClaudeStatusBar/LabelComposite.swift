@@ -23,7 +23,8 @@ enum LabelComposite {
         let iconPart = animatedIconPart(for: icon, busy: busy,
                                         shimmerPhase: shimmerPhase, dark: dark)
         let usage = model.usageText.map { text in
-            (image: ShimmerText.plain(text, dark: dark, monospacedDigits: true),
+            (image: ShimmerText.plain(text, dark: dark, monospacedDigits: true,
+                                      color: color(for: model.usageLevel)),
              offsetY: CGFloat(0))
         }
 
@@ -50,6 +51,19 @@ enum LabelComposite {
                 x += part.image.size.width + spacing
             }
             return true
+        }
+    }
+
+    /// Mirrors the popover's `UsageBar.color` convention so the status-bar
+    /// percentage and the per-account bars agree on what "getting close"
+    /// looks like. nil (no usage shown, or level unknown) keeps the default
+    /// monochrome text color.
+    private static func color(for level: UsageLevel?) -> NSColor? {
+        switch level {
+        case .green: return .systemGreen
+        case .yellow: return .systemYellow
+        case .red: return .systemRed
+        case nil: return nil
         }
     }
 

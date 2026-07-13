@@ -112,6 +112,28 @@ private func usage(five: Double, seven: Double) -> AccountUsageState {
         #expect(model(display: nil, usage: nil, style: .full).fiveHourLevel == nil)
     }
 
+    @Test func usageLevelMatchesFiveHourForTextStyles() {
+        // 5h red, 7d green — percent/compact/textFirst only surface the 5h
+        // number, so usageLevel must track it, not the (greener) 7d figure.
+        let u = usage(five: 85, seven: 20)
+        #expect(model(display: nil, usage: u, style: .percent).usageLevel == .red)
+        #expect(model(display: nil, usage: u, style: .compact).usageLevel == .red)
+        #expect(model(display: nil, usage: u, style: .textFirst).usageLevel == .red)
+    }
+
+    @Test func usageLevelIsWorseOfBothForFullStyle() {
+        // .full shows both numbers in one string, so usageLevel should be
+        // whichever window is more severe, regardless of which one it is.
+        #expect(model(display: nil, usage: usage(five: 30, seven: 85), style: .full).usageLevel == .red)
+        #expect(model(display: nil, usage: usage(five: 85, seven: 30), style: .full).usageLevel == .red)
+        #expect(model(display: nil, usage: usage(five: 60, seven: 55), style: .full).usageLevel == .yellow)
+    }
+
+    @Test func usageLevelNilWhenNoUsageOrIconOnly() {
+        #expect(model(display: nil, usage: nil, style: .full).usageLevel == nil)
+        #expect(model(display: nil, usage: usage(five: 85, seven: 20), style: .iconOnly).usageLevel == nil)
+    }
+
     @Test func toolLabelThemedByStyle() {
         let m = model(display: session(.tool, label: "Editing", busyFor: 192),
                       usage: nil, style: .full,

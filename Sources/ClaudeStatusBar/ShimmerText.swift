@@ -48,8 +48,8 @@ enum ShimmerText {
     /// the status button's image+title slots, and the image always leads —
     /// silently ignoring the HStack's textFirst order.
     static func plain(_ text: String, dark: Bool,
-                      monospacedDigits: Bool = false) -> NSImage {
-        let attributed = attributedString(text, color: dark ? .white : .black,
+                      monospacedDigits: Bool = false, color: NSColor? = nil) -> NSImage {
+        let attributed = attributedString(text, color: color ?? (dark ? .white : .black),
                                           monospacedDigits: monospacedDigits)
         var size = attributed.size()
         size.width = min(ceil(size.width), maxTextWidth)
