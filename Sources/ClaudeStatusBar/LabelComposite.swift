@@ -9,7 +9,7 @@ import StatusBarCore
 /// image (the shimmer). Compositing sidesteps the slots entirely.
 enum LabelComposite {
     static let spacing: CGFloat = 4
-    static let height: CGFloat = 24
+    static let height: CGFloat = 32
 
     static func image(model: MenuBarLabelModel, icon: ClawdIcon,
                       shimmerPhase: Double, dark: Bool, normalColor: NSColor,
@@ -98,7 +98,7 @@ enum LabelComposite {
             while let url = bundle.url(forResource: "clawd/anim/\(icon.rawValue)-\(k)",
                                        withExtension: "png"),
                   let image = NSImage(contentsOf: url) {
-                image.size = NSSize(width: 24, height: 24)
+                image.size = NSSize(width: 32, height: 32)
                 frames.append(image)
                 k += 1
             }
@@ -122,7 +122,7 @@ enum LabelComposite {
               let url = bundle.url(forResource: "clawd/\(icon.rawValue)", withExtension: "png"),
               let nsImage = NSImage(contentsOf: url)
         else { return sfFallback(for: icon, dark: dark) }
-        nsImage.size = NSSize(width: 24, height: 24)
+        nsImage.size = NSSize(width: 32, height: 32)
         let entry = (image: nsImage, offsetY: verticalCenteringOffset(nsImage))
         imageCache[icon] = entry
         return entry
