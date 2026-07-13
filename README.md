@@ -36,6 +36,9 @@ with multi-account support.
 Download `ClaudeStatusBar.dmg` from Releases, drag to Applications, launch.
 The app lives in the menu bar only (no Dock icon).
 
+See [INSTALL.md](INSTALL.md) for a detailed step-by-step walkthrough,
+including building from source and setting up multi-account usage.
+
 The app is ad-hoc signed, so macOS quarantines the downloaded copy and the
 first launch is refused ("cannot verify" / "damaged"). Right-click the app in
 Applications and choose **Open** (twice if needed), or clear the quarantine
