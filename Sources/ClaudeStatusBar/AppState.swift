@@ -117,7 +117,7 @@ final class AppState {
         }
     }
 
-    /// Drives the elapsed counter and shimmer while a session is busy — 8 fps
+    /// Drives the elapsed counter and shimmer while a session is busy — 30 fps
     /// when activity text is on the bar (the shimmer needs sub-second frames),
     /// 1 Hz for icon-only/compact styles. A plain task loop, not TimelineView:
     /// a periodic TimelineView in the MenuBarExtra label re-anchors its
@@ -127,13 +127,13 @@ final class AppState {
     private func updateTicker() {
         if display?.busySince != nil {
             let interval: Duration = displayStyle == .iconOnly || displayStyle == .compact
-                ? .seconds(1) : .milliseconds(125)
+                ? .seconds(1) : .milliseconds(33)
             guard tickTask == nil || interval != tickInterval else { return }
             tickTask?.cancel()
             tickInterval = interval
             tick = Date()
             // DIAGNOSTIC(shimmer):
-            tickerLog.info("ticker start interval=\(interval == .seconds(1) ? "1s" : "125ms", privacy: .public) style=\(String(describing: self.displayStyle), privacy: .public) state=\(String(describing: self.display?.state), privacy: .public)")
+            tickerLog.info("ticker start interval=\(interval == .seconds(1) ? "1s" : "33ms", privacy: .public) style=\(String(describing: self.displayStyle), privacy: .public) state=\(String(describing: self.display?.state), privacy: .public)")
             tickTask = Task { [weak self] in
                 while !Task.isCancelled {
                     try? await Task.sleep(for: interval)

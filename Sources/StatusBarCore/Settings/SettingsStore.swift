@@ -38,6 +38,9 @@ public final class SettingsStore {
     public var normalColorHex: String {
         didSet { defaults.set(normalColorHex, forKey: "normalColorHex") }
     }
+    public var textAnimationEnabled: Bool {
+        didSet { defaults.set(textAnimationEnabled, forKey: "textAnimationEnabled") }
+    }
 
     public var displayStyle: DisplayStyle {
         get { DisplayStyle(rawValue: displayStyleRaw) ?? .full }
@@ -61,5 +64,6 @@ public final class SettingsStore {
         hiddenAccounts = defaults.stringArray(forKey: "hiddenAccounts") ?? []
         messageStyleId = defaults.string(forKey: "messageStyleId") ?? "classic"
         normalColorHex = defaults.string(forKey: "normalColorHex") ?? "#34C759"
+        textAnimationEnabled = defaults.object(forKey: "textAnimationEnabled") as? Bool ?? true
     }
 }
