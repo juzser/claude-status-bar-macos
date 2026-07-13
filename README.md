@@ -1,5 +1,7 @@
 # Claude Status Bar for macOS
 
+[![CI](https://github.com/juzser/claude-status-bar-macos/actions/workflows/ci.yml/badge.svg)](https://github.com/juzser/claude-status-bar-macos/actions/workflows/ci.yml)
+
 Native macOS menu bar app showing Claude usage and Claude Code activity at a
 glance. A clean-room Swift port of the idea behind
 [claude-status-bar-kde](https://github.com/vntrungld/claude-status-bar-kde),
@@ -55,6 +57,12 @@ make dmg     # dist/ClaudeStatusBar.dmg
 - The app is not sandboxed (it must read `~/.claude` and `~/.cux`).
 - The hook binary always exits 0 and prints nothing, so it can never block
   or corrupt a Claude Code session.
+
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the
+build/test/PR workflow, and [CLAUDE.md](CLAUDE.md) if you're using Claude
+Code (or another AI coding agent) to work in this repo.
 
 ## License
 
