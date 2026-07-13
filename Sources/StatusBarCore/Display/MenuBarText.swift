@@ -4,6 +4,10 @@ public enum DisplayStyle: String, CaseIterable, Sendable {
     case iconOnly, compact, percent, textFirst, full
 }
 
+public enum BackgroundStyle: String, CaseIterable, Sendable {
+    case transparent, light, dark
+}
+
 public struct MenuBarLabelModel: Equatable, Sendable {
     public let state: SessionState
     public let activityText: String?

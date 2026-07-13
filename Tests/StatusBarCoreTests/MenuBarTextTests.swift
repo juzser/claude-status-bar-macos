@@ -221,3 +221,21 @@ private func usage(five: Double, seven: Double) -> AccountUsageState {
         #expect(cycler.next(from: ThinkingVerbs.all) == first)
     }
 }
+
+@Suite struct BackgroundStyleTests {
+    @Test func hasExactlyThreeCases() {
+        #expect(BackgroundStyle.allCases.count == 3)
+    }
+
+    @Test func rawValuesRoundTrip() {
+        for style in BackgroundStyle.allCases {
+            #expect(BackgroundStyle(rawValue: style.rawValue) == style)
+        }
+    }
+
+    @Test func rawValuesMatchCaseNames() {
+        #expect(BackgroundStyle.transparent.rawValue == "transparent")
+        #expect(BackgroundStyle.light.rawValue == "light")
+        #expect(BackgroundStyle.dark.rawValue == "dark")
+    }
+}
