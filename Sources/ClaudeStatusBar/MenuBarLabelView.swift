@@ -10,7 +10,7 @@ struct MenuBarLabelView: View {
     let yellowColor: NSColor
     let redColor: NSColor
     let animateText: Bool
-    let backgroundStyle: StatusBarCore.BackgroundStyle = .transparent
+    var backgroundStyle: StatusBarCore.BackgroundStyle = .transparent
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {

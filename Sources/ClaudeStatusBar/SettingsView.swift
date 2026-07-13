@@ -53,6 +53,12 @@ private struct GeneralTab: View {
                 Text("Full — 🦀 Working · 3s  5h 71% · 7d 29%").tag(DisplayStyle.full)
             }
             .pickerStyle(.radioGroup)
+            Picker("Background", selection: $settings.backgroundStyle) {
+                Text("Transparent").tag(StatusBarCore.BackgroundStyle.transparent)
+                Text("Light").tag(StatusBarCore.BackgroundStyle.light)
+                Text("Dark").tag(StatusBarCore.BackgroundStyle.dark)
+            }
+            .pickerStyle(.segmented)
             Picker("Message style", selection: $settings.messageStyleId) {
                 ForEach(MessageStyles.all) { style in
                     Text(style.name).tag(style.id)

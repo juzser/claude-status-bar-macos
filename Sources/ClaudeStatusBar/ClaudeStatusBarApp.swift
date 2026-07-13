@@ -22,7 +22,8 @@ struct ClaudeStatusBarApp: App {
                              normalColor: NSColor(hex: appState.settings.normalColorHex) ?? .systemGreen,
                              yellowColor: NSColor(hex: appState.settings.yellowColorHex) ?? .systemYellow,
                              redColor: NSColor(hex: appState.settings.redColorHex) ?? .systemRed,
-                             animateText: appState.settings.textAnimationEnabled)
+                             animateText: appState.settings.textAnimationEnabled,
+                             backgroundStyle: appState.settings.backgroundStyle)
                 .onAppear {
                     appState.start()
                     Task { await appState.refreshUsageNow() }
