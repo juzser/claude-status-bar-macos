@@ -12,7 +12,8 @@ enum LabelComposite {
     static let height: CGFloat = 24
 
     static func image(model: MenuBarLabelModel, icon: ClawdIcon,
-                      shimmerPhase: Double, dark: Bool, normalColor: NSColor) -> NSImage {
+                      shimmerPhase: Double, dark: Bool, normalColor: NSColor,
+                      yellowColor: NSColor, redColor: NSColor) -> NSImage {
         let busy = model.state == .thinking || model.state == .tool
         let activity: (image: NSImage, offsetY: CGFloat)? = model.activityText.map { text in
             let baked = busy
@@ -24,7 +25,8 @@ enum LabelComposite {
                                         shimmerPhase: shimmerPhase, dark: dark)
         let usage = model.usageText.map { text in
             (image: ShimmerText.plain(text, dark: dark, monospacedDigits: true,
-                                      color: color(for: model.usageLevel, normalColor: normalColor)),
+                                      color: color(for: model.usageLevel, normalColor: normalColor,
+                                                   yellowColor: yellowColor, redColor: redColor)),
              offsetY: CGFloat(0))
         }
 
@@ -57,13 +59,14 @@ enum LabelComposite {
     /// Mirrors the popover's `UsageBar.color` convention so the status-bar
     /// percentage and the per-account bars agree on what "getting close"
     /// looks like. nil (no usage shown, or level unknown) keeps the default
-    /// monochrome text color. Only the "normal" (green) level is user
-    /// configurable — yellow/red stay hardcoded system colors.
-    private static func color(for level: UsageLevel?, normalColor: NSColor) -> NSColor? {
+    /// monochrome text color. All three levels (normal/yellow/red) are user
+    /// configurable.
+    private static func color(for level: UsageLevel?, normalColor: NSColor,
+                              yellowColor: NSColor, redColor: NSColor) -> NSColor? {
         switch level {
         case .green: return normalColor
-        case .yellow: return .systemYellow
-        case .red: return .systemRed
+        case .yellow: return yellowColor
+        case .red: return redColor
         case nil: return nil
         }
     }

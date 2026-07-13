@@ -7,6 +7,8 @@ struct MenuBarLabelView: View {
     let icon: ClawdIcon
     var shimmerPhase: Double = 0
     let normalColor: NSColor
+    let yellowColor: NSColor
+    let redColor: NSColor
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -17,7 +19,9 @@ struct MenuBarLabelView: View {
         Image(nsImage: LabelComposite.image(model: model, icon: icon,
                                             shimmerPhase: shimmerPhase,
                                             dark: colorScheme == .dark,
-                                            normalColor: normalColor))
+                                            normalColor: normalColor,
+                                            yellowColor: yellowColor,
+                                            redColor: redColor))
             .renderingMode(.original)
     }
 }

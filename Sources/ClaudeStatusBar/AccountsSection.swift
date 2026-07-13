@@ -7,6 +7,8 @@ struct AccountsSection: View {
     let yellowAt: Double
     let redAt: Double
     let normalColor: Color
+    let yellowColor: Color
+    let redColor: Color
     let now: Date
     let onSwitch: (Account) -> Void
 
@@ -21,7 +23,8 @@ struct AccountsSection: View {
             } else {
                 ForEach(accounts) { account in
                     AccountRow(account: account, state: states[account.id],
-                               yellowAt: yellowAt, redAt: redAt, normalColor: normalColor, now: now,
+                               yellowAt: yellowAt, redAt: redAt, normalColor: normalColor,
+                               yellowColor: yellowColor, redColor: redColor, now: now,
                                showActiveBadge: accounts.count > 1, onSwitch: onSwitch)
                 }
             }
@@ -35,6 +38,8 @@ private struct AccountRow: View {
     let yellowAt: Double
     let redAt: Double
     let normalColor: Color
+    let yellowColor: Color
+    let redColor: Color
     let now: Date
     let showActiveBadge: Bool
     let onSwitch: (Account) -> Void
@@ -69,9 +74,11 @@ private struct AccountRow: View {
             }
             if let snapshot = state?.snapshot {
                 UsageBar(title: "5h", window: snapshot.fiveHour,
-                         yellowAt: yellowAt, redAt: redAt, normalColor: normalColor, now: now)
+                         yellowAt: yellowAt, redAt: redAt, normalColor: normalColor,
+                         yellowColor: yellowColor, redColor: redColor, now: now)
                 UsageBar(title: "7d", window: snapshot.sevenDay,
-                         yellowAt: yellowAt, redAt: redAt, normalColor: normalColor, now: now)
+                         yellowAt: yellowAt, redAt: redAt, normalColor: normalColor,
+                         yellowColor: yellowColor, redColor: redColor, now: now)
             } else {
                 Text("No usage data").font(.caption).foregroundStyle(.secondary)
             }
@@ -86,6 +93,8 @@ private struct UsageBar: View {
     let yellowAt: Double
     let redAt: Double
     let normalColor: Color
+    let yellowColor: Color
+    let redColor: Color
     let now: Date
 
     var body: some View {
@@ -108,8 +117,8 @@ private struct UsageBar: View {
     private var color: Color {
         switch UsageLevel.level(for: window?.utilization ?? 0, yellowAt: yellowAt, redAt: redAt) {
         case .green: return normalColor
-        case .yellow: return .yellow
-        case .red: return .red
+        case .yellow: return yellowColor
+        case .red: return redColor
         }
     }
 }

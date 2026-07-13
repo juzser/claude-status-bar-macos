@@ -20,6 +20,8 @@ import Testing
         #expect(store.redAt == 80)
         #expect(store.hiddenAccounts.isEmpty)
         #expect(store.normalColorHex == "#34C759")
+        #expect(store.yellowColorHex == "#FFCC00")
+        #expect(store.redColorHex == "#FF3B30")
     }
 
     @Test func persistsAcrossInstances() {
@@ -33,6 +35,8 @@ import Testing
         store.redAt = 90
         store.hiddenAccounts = ["slot-2"]
         store.normalColorHex = "#112233"
+        store.yellowColorHex = "#445566"
+        store.redColorHex = "#778899"
 
         let reloaded = SettingsStore(defaults: defaults)
         #expect(reloaded.showUsageOnBar == false)
@@ -43,6 +47,8 @@ import Testing
         #expect(reloaded.redAt == 90)
         #expect(reloaded.hiddenAccounts == ["slot-2"])
         #expect(reloaded.normalColorHex == "#112233")
+        #expect(reloaded.yellowColorHex == "#445566")
+        #expect(reloaded.redColorHex == "#778899")
     }
 
     @Test func unknownDisplayStyleFallsBackToFull() {

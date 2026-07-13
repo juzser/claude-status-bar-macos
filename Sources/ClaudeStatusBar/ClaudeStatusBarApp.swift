@@ -19,7 +19,9 @@ struct ClaudeStatusBarApp: App {
             MenuBarLabelView(model: appState.labelModel,
                              icon: StatusIcon.icon(for: appState.display),
                              shimmerPhase: ShimmerText.phase(at: appState.tick),
-                             normalColor: NSColor(hex: appState.settings.normalColorHex) ?? .systemGreen)
+                             normalColor: NSColor(hex: appState.settings.normalColorHex) ?? .systemGreen,
+                             yellowColor: NSColor(hex: appState.settings.yellowColorHex) ?? .systemYellow,
+                             redColor: NSColor(hex: appState.settings.redColorHex) ?? .systemRed)
                 .onAppear {
                     appState.start()
                     Task { await appState.refreshUsageNow() }
