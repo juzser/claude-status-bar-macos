@@ -1,11 +1,6 @@
 import Foundation
 import Observation
 import StatusBarCore
-import os
-
-// DIAGNOSTIC(shimmer): temporary ticker probe — remove once the
-// "no visible animation" report is resolved.
-private let tickerLog = Logger(subsystem: "ClaudeStatusBar", category: "shimmer")
 
 /// Single source of truth for the UI.
 @Observable @MainActor
@@ -132,8 +127,6 @@ final class AppState {
             tickTask?.cancel()
             tickInterval = interval
             tick = Date()
-            // DIAGNOSTIC(shimmer):
-            tickerLog.info("ticker start interval=\(interval == .seconds(1) ? "1s" : "33ms", privacy: .public) style=\(String(describing: self.displayStyle), privacy: .public) state=\(String(describing: self.display?.state), privacy: .public)")
             tickTask = Task { [weak self] in
                 while !Task.isCancelled {
                     try? await Task.sleep(for: interval)
@@ -141,10 +134,6 @@ final class AppState {
                 }
             }
         } else {
-            if tickTask != nil {
-                // DIAGNOSTIC(shimmer):
-                tickerLog.info("ticker stop")
-            }
             tickTask?.cancel()
             tickTask = nil
         }
