@@ -32,6 +32,7 @@ final class AppState {
     let usageStore: UsageStore
     let paths: AppPaths
 
+    private let cuxRefresher = CuxRefresher()
     private var verbCycler = VerbCycler()
     private var watcher: DirectoryWatcher?
     private var pollTask: Task<Void, Never>?
@@ -158,6 +159,9 @@ final class AppState {
 
     func refreshUsageNow() async {
         accounts = AccountDiscovery.discover(cuxRoot: cuxRoot, credentialsFile: credentialsFile)
+        // Slot accounts are tokenless, so their usage comes from cux's own
+        // cache — ask cux to repoll it first or the mirror stays session-stale.
+        await cuxRefresher.refreshIfNeeded(accounts: accounts)
         await usageStore.refresh(accounts: usageInputs(accounts))
     }
 
@@ -191,6 +195,7 @@ final class AppState {
             return !UsageStore.shouldSkip(cycle: cycle, failureCount: failures)
         }
         guard !due.isEmpty else { return }
+        await cuxRefresher.refreshIfNeeded(accounts: due)
         await usageStore.refresh(accounts: usageInputs(due))
     }
 
