@@ -84,17 +84,19 @@ private struct ThresholdsTab: View {
 
     var body: some View {
         Form {
+            ColorPicker("Normal usage color", selection: normalColorBinding)
             Slider(value: $settings.yellowAt, in: 10...90, step: 5) {
                 Text("Yellow from \(Int(settings.yellowAt))%")
             }
+            ColorPicker("Yellow usage color", selection: yellowColorBinding)
             Slider(value: $settings.redAt, in: 20...100, step: 5) {
                 Text("Red from \(Int(settings.redAt))%")
             }
+            ColorPicker("Red usage color", selection: redColorBinding)
             if settings.redAt <= settings.yellowAt {
                 Text("Red threshold should be above yellow")
                     .font(.caption).foregroundStyle(.orange)
             }
-            ColorPicker("Normal usage color", selection: normalColorBinding)
         }
         .padding(20)
     }
@@ -106,6 +108,20 @@ private struct ThresholdsTab: View {
         Binding(
             get: { Color(hex: settings.normalColorHex) ?? .green },
             set: { settings.normalColorHex = $0.hexString })
+    }
+
+    /// Same bridge as `normalColorBinding`, for the yellow usage level.
+    private var yellowColorBinding: Binding<Color> {
+        Binding(
+            get: { Color(hex: settings.yellowColorHex) ?? .yellow },
+            set: { settings.yellowColorHex = $0.hexString })
+    }
+
+    /// Same bridge as `normalColorBinding`, for the red usage level.
+    private var redColorBinding: Binding<Color> {
+        Binding(
+            get: { Color(hex: settings.redColorHex) ?? .red },
+            set: { settings.redColorHex = $0.hexString })
     }
 }
 

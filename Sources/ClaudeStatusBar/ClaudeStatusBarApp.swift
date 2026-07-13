@@ -20,6 +20,8 @@ struct ClaudeStatusBarApp: App {
                              icon: StatusIcon.icon(for: appState.display),
                              shimmerPhase: ShimmerText.phase(at: appState.tick),
                              normalColor: NSColor(hex: appState.settings.normalColorHex) ?? .systemGreen,
+                             yellowColor: NSColor(hex: appState.settings.yellowColorHex) ?? .systemYellow,
+                             redColor: NSColor(hex: appState.settings.redColorHex) ?? .systemRed,
                              animateText: appState.settings.textAnimationEnabled)
                 .onAppear {
                     appState.start()
