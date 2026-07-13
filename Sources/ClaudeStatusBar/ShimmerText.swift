@@ -73,7 +73,13 @@ enum ShimmerText {
             lastSampleAt = now
         }
         let full: NSColor = dark ? .white : .black
-        let attributed = attributedString(text, color: full.withAlphaComponent(0.55))
+        // The dim base must be an opaque gray, not full.withAlphaComponent:
+        // sourceAtop of a color onto an alpha-faded copy of itself is a no-op
+        // (result = Da·(Sc·Sa + Dc·(1−Sa)) = Da when Sc == Dc), so the band
+        // would change nothing. Blending toward the background color keeps
+        // alpha at 1 and lets the band ramp the glyph color dim→full.
+        let dim = full.blended(withFraction: 0.45, of: dark ? .black : .white) ?? full
+        let attributed = attributedString(text, color: dim)
         var size = attributed.size()
         size.width = min(ceil(size.width), maxTextWidth)
         size.height = ceil(size.height)
