@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import StatusBarCore
 
@@ -17,7 +18,8 @@ struct ClaudeStatusBarApp: App {
         } label: {
             MenuBarLabelView(model: appState.labelModel,
                              icon: StatusIcon.icon(for: appState.display),
-                             shimmerPhase: ShimmerText.phase(at: appState.tick))
+                             shimmerPhase: ShimmerText.phase(at: appState.tick),
+                             normalColor: NSColor(hex: appState.settings.normalColorHex) ?? .systemGreen)
                 .onAppear {
                     appState.start()
                     Task { await appState.refreshUsageNow() }

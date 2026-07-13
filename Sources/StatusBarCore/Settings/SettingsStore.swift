@@ -31,6 +31,13 @@ public final class SettingsStore {
     public var messageStyleId: String {
         didSet { defaults.set(messageStyleId, forKey: "messageStyleId") }
     }
+    /// Hex ("#RRGGBB") for the "normal" (below-yellow) usage level; yellow
+    /// and red stay hardcoded system colors. Default is NSColor.systemGreen's
+    /// sRGB hex, so a fresh install renders identically to the old hardcoded
+    /// color.
+    public var normalColorHex: String {
+        didSet { defaults.set(normalColorHex, forKey: "normalColorHex") }
+    }
 
     public var displayStyle: DisplayStyle {
         get { DisplayStyle(rawValue: displayStyleRaw) ?? .full }
@@ -53,5 +60,6 @@ public final class SettingsStore {
         redAt = defaults.object(forKey: "redAt") as? Double ?? 80
         hiddenAccounts = defaults.stringArray(forKey: "hiddenAccounts") ?? []
         messageStyleId = defaults.string(forKey: "messageStyleId") ?? "classic"
+        normalColorHex = defaults.string(forKey: "normalColorHex") ?? "#34C759"
     }
 }

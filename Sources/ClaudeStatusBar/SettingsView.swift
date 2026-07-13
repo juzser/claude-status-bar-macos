@@ -93,8 +93,18 @@ private struct ThresholdsTab: View {
                 Text("Red threshold should be above yellow")
                     .font(.caption).foregroundStyle(.orange)
             }
+            ColorPicker("Normal usage color", selection: normalColorBinding)
         }
         .padding(20)
+    }
+
+    /// Bridges SettingsStore's persisted hex string to a picker-friendly
+    /// Color; malformed hex (only reachable via manually-edited defaults)
+    /// falls back to the default green rather than crashing.
+    private var normalColorBinding: Binding<Color> {
+        Binding(
+            get: { Color(hex: settings.normalColorHex) ?? .green },
+            set: { settings.normalColorHex = $0.hexString })
     }
 }
 
