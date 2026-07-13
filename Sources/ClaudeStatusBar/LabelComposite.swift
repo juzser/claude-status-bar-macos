@@ -12,10 +12,11 @@ enum LabelComposite {
     static let height: CGFloat = 24
 
     static func image(model: MenuBarLabelModel, icon: ClawdIcon,
-                      shimmerPhase: Double, dark: Bool, normalColor: NSColor) -> NSImage {
+                      shimmerPhase: Double, dark: Bool, normalColor: NSColor,
+                      animateText: Bool) -> NSImage {
         let busy = model.state == .thinking || model.state == .tool
         let activity: (image: NSImage, offsetY: CGFloat)? = model.activityText.map { text in
-            let baked = busy
+            let baked = (busy && animateText)
                 ? ShimmerText.image(text, phase: shimmerPhase, dark: dark)
                 : ShimmerText.plain(text, dark: dark)
             return (image: baked, offsetY: 0)
@@ -82,7 +83,7 @@ enum LabelComposite {
         return frames[min(Int(shimmerPhase * Double(frames.count)), frames.count - 1)]
     }
 
-    /// Decoded animation frames cached per icon — the busy tick renders 8
+    /// Decoded animation frames cached per icon — the busy tick renders 30
     /// times a second and must not touch the disk.
     private static var frameCache: [ClawdIcon: [(image: NSImage, offsetY: CGFloat)]] = [:]
 
@@ -108,7 +109,7 @@ enum LabelComposite {
     }
 
     /// Decoded PNGs cached per icon case — the busy tick would otherwise
-    /// re-read and re-decode the same file from disk 8 times a second.
+    /// re-read and re-decode the same file from disk 30 times a second.
     private static var imageCache: [ClawdIcon: (image: NSImage, offsetY: CGFloat)] = [:]
 
     private static func cachedImage(for icon: ClawdIcon,

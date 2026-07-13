@@ -37,7 +37,7 @@ enum ShimmerText {
     }
 
     /// 0..<1 position of the sweep at `date`; feed `AppState.tick` so every
-    /// 8 fps tick advances the band.
+    /// 30 fps tick advances the band.
     static func phase(at date: Date) -> Double {
         let t = date.timeIntervalSinceReferenceDate
         return t.truncatingRemainder(dividingBy: period) / period
