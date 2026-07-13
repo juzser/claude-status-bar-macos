@@ -14,7 +14,7 @@ enum LabelComposite {
     static func image(model: MenuBarLabelModel, icon: ClawdIcon,
                       shimmerPhase: Double, dark: Bool, normalColor: NSColor,
                       yellowColor: NSColor, redColor: NSColor,
-                      animateText: Bool) -> NSImage {
+                      animateText: Bool, backgroundStyle: BackgroundStyle = .transparent) -> NSImage {
         let busy = model.state == .thinking || model.state == .tool
         let activity: (image: NSImage, offsetY: CGFloat)? = model.activityText.map { text in
             let baked = (busy && animateText)
@@ -41,9 +41,21 @@ enum LabelComposite {
 
         let totalWidth = parts.map(\.image.size.width).reduce(0, +)
             + spacing * CGFloat(parts.count - 1)
-        let size = NSSize(width: totalWidth, height: height)
+        let pillPadding: CGFloat = 6
+        let canvasWidth = backgroundStyle == .transparent ? totalWidth : totalWidth + pillPadding * 2
+        let partsOriginX: CGFloat = backgroundStyle == .transparent ? 0 : pillPadding
+        let size = NSSize(width: canvasWidth, height: height)
         return NSImage(size: size, flipped: false) { _ in
-            var x: CGFloat = 0
+            if let (fill, stroke) = pillColors(for: backgroundStyle) {
+                let pillRect = NSRect(x: 0, y: 0, width: canvasWidth, height: height)
+                let pillPath = NSBezierPath(roundedRect: pillRect, xRadius: height / 2, yRadius: height / 2)
+                fill.setFill()
+                pillPath.fill()
+                stroke.setStroke()
+                pillPath.lineWidth = 0.5
+                pillPath.stroke()
+            }
+            var x: CGFloat = partsOriginX
             for part in parts {
                 // Canvas is y-up; offsetY was measured in y-down (visual)
                 // terms, so subtract it to nudge the artwork toward center.
@@ -54,6 +66,18 @@ enum LabelComposite {
                 x += part.image.size.width + spacing
             }
             return true
+        }
+    }
+
+    /// Fixed reference colors approximating NSColor.windowBackgroundColor
+    /// under each appearance — same "bake a known system color's sRGB hex"
+    /// convention as normalColorHex/yellowColorHex/redColorHex. nil means no
+    /// pill is drawn (.transparent), preserving pre-feature output exactly.
+    private static func pillColors(for style: BackgroundStyle) -> (fill: NSColor, stroke: NSColor)? {
+        switch style {
+        case .transparent: return nil
+        case .light: return (NSColor(hex: "#E5E5E5") ?? .white, NSColor(hex: "#C7C7C7") ?? .lightGray)
+        case .dark: return (NSColor(hex: "#3A3A3C") ?? .black, NSColor(hex: "#545456") ?? .darkGray)
         }
     }
 

@@ -29,5 +29,9 @@ let package = Package(
             name: "StatusBarCoreTests",
             dependencies: ["StatusBarCore", .product(name: "Testing", package: "swift-testing")],
             swiftSettings: [.swiftLanguageMode(.v5)]),
+        .testTarget(
+            name: "ClaudeStatusBarTests",
+            dependencies: ["ClaudeStatusBar", "StatusBarCore", .product(name: "Testing", package: "swift-testing")],
+            swiftSettings: [.swiftLanguageMode(.v5)]),
     ]
 )
