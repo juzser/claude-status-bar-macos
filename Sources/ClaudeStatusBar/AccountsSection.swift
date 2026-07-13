@@ -7,6 +7,7 @@ struct AccountsSection: View {
     let yellowAt: Double
     let redAt: Double
     let now: Date
+    let onSwitch: (Account) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -20,7 +21,7 @@ struct AccountsSection: View {
                 ForEach(accounts) { account in
                     AccountRow(account: account, state: states[account.id],
                                yellowAt: yellowAt, redAt: redAt, now: now,
-                               showActiveBadge: accounts.count > 1)
+                               showActiveBadge: accounts.count > 1, onSwitch: onSwitch)
                 }
             }
         }
@@ -34,6 +35,7 @@ private struct AccountRow: View {
     let redAt: Double
     let now: Date
     let showActiveBadge: Bool
+    let onSwitch: (Account) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -46,6 +48,10 @@ private struct AccountRow: View {
                 if account.isActive && showActiveBadge {
                     Text("active").font(.caption2).padding(.horizontal, 4)
                         .background(.tint.opacity(0.2), in: Capsule())
+                }
+                if !account.isActive && account.slot != nil && showActiveBadge {
+                    Button("Switch") { onSwitch(account) }
+                        .controlSize(.small)
                 }
                 Spacer()
                 if state?.needsRelogin == true {

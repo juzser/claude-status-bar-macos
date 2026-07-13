@@ -33,6 +33,7 @@ final class AppState {
     let paths: AppPaths
 
     private let cuxRefresher = CuxRefresher()
+    private let cuxAccountSwitcher = CuxAccountSwitcher()
     private var verbCycler = VerbCycler()
     private var watcher: DirectoryWatcher?
     private var pollTask: Task<Void, Never>?
@@ -163,6 +164,16 @@ final class AppState {
         // cache — ask cux to repoll it first or the mirror stays session-stale.
         await cuxRefresher.refreshIfNeeded(accounts: accounts)
         await usageStore.refresh(accounts: usageInputs(accounts))
+    }
+
+    /// Switches the active cux slot, then re-discovers accounts and refreshes
+    /// usage so `isActive` and the usage bars reflect the new slot right away.
+    /// No-op for the plain credentials-file account (`slot == nil`), which
+    /// has nothing to switch to.
+    func switchAccount(_ account: Account) async {
+        guard let slot = account.slot else { return }
+        _ = await cuxAccountSwitcher.switchTo(slot: slot)
+        await refreshUsageNow()
     }
 
     /// Re-fetches only accounts flagged needs-relogin. Runs when the popover
