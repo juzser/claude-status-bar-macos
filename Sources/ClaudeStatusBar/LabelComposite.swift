@@ -13,13 +13,15 @@ enum LabelComposite {
 
     static func image(model: MenuBarLabelModel, icon: ClawdIcon,
                       shimmerPhase: Double, dark: Bool) -> NSImage {
+        let busy = model.state == .thinking || model.state == .tool
         let activity: (image: NSImage, offsetY: CGFloat)? = model.activityText.map { text in
-            let baked = (model.state == .thinking || model.state == .tool)
+            let baked = busy
                 ? ShimmerText.image(text, phase: shimmerPhase, dark: dark)
                 : ShimmerText.plain(text, dark: dark)
             return (image: baked, offsetY: 0)
         }
-        let iconPart = cachedImage(for: icon, dark: dark)
+        let iconPart = animatedIconPart(for: icon, busy: busy,
+                                        shimmerPhase: shimmerPhase, dark: dark)
         let usage = model.usageText.map { text in
             (image: ShimmerText.plain(text, dark: dark, monospacedDigits: true),
              offsetY: CGFloat(0))
@@ -49,6 +51,45 @@ enum LabelComposite {
             }
             return true
         }
+    }
+
+    /// Picks the icon frame for this render. Busy states step through the
+    /// baked clawd-tank animation frames driven by the shimmer phase (same
+    /// 1.6 s period, so icon and text stay in lockstep); waiting/idle hold
+    /// frame 0 — motion would draw the eye while nothing is happening, and
+    /// the non-busy tick is 1 s so an animation would be choppy anyway.
+    private static func animatedIconPart(for icon: ClawdIcon, busy: Bool,
+                                         shimmerPhase: Double,
+                                         dark: Bool) -> (image: NSImage, offsetY: CGFloat)? {
+        let frames = animationFrames(for: icon)
+        guard !frames.isEmpty else { return cachedImage(for: icon, dark: dark) }
+        guard busy else { return frames[0] }
+        return frames[min(Int(shimmerPhase * Double(frames.count)), frames.count - 1)]
+    }
+
+    /// Decoded animation frames cached per icon — the busy tick renders 8
+    /// times a second and must not touch the disk.
+    private static var frameCache: [ClawdIcon: [(image: NSImage, offsetY: CGFloat)]] = [:]
+
+    private static func animationFrames(for icon: ClawdIcon) -> [(image: NSImage, offsetY: CGFloat)] {
+        if let cached = frameCache[icon] { return cached }
+        var frames: [NSImage] = []
+        if let bundle = ResourceBundle.resolved {
+            var k = 0
+            while let url = bundle.url(forResource: "clawd/anim/\(icon.rawValue)-\(k)",
+                                       withExtension: "png"),
+                  let image = NSImage(contentsOf: url) {
+                image.size = NSSize(width: 24, height: 24)
+                frames.append(image)
+                k += 1
+            }
+        }
+        // One offset from frame 0 for the whole loop: per-frame centering
+        // would make the character bob as moving limbs shift the alpha bounds.
+        let offset = frames.first.map(verticalCenteringOffset) ?? 0
+        let entry = frames.map { (image: $0, offsetY: offset) }
+        frameCache[icon] = entry
+        return entry
     }
 
     /// Decoded PNGs cached per icon case — the busy tick would otherwise
