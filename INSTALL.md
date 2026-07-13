@@ -21,20 +21,17 @@ usage via [cux](https://cux.inulute.com). For the short version, see the
 
 ## 2. Get the app
 
-### Path A — download a release (when one is available)
+### Path A — download a release (recommended)
 
-Check the [Releases page](https://github.com/juzser/claude-status-bar-macos/releases)
-for a `ClaudeStatusBar.dmg` asset. At the time of writing this project has no
-published releases yet, so build from source (Path B) is the primary
-installation path until the first release ships.
-
-Once a release exists:
-
-1. Download `ClaudeStatusBar.dmg` from Releases.
+1. Go to the [Releases page](https://github.com/juzser/claude-status-bar-macos/releases)
+   and download `ClaudeStatusBar.dmg` from the latest release.
 2. Open the disk image and drag `ClaudeStatusBar.app` to `/Applications`.
 3. Continue at [step 3, First launch](#3-first-launch--gatekeeper).
 
 ### Path B — build from source
+
+Use this path if you want to build from a specific commit, contribute, or
+only have Command Line Tools (no DMG to trust):
 
 1. Clone the repo:
 
