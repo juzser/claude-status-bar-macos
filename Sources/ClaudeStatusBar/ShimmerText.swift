@@ -15,11 +15,52 @@ enum ShimmerText {
     /// One full sweep (off-screen left → off-screen right).
     static let period: TimeInterval = 1.6
 
+    /// Menu bar space is shared with every other status item; text longer
+    /// than this is tail-truncated at draw time.
+    static let maxTextWidth: CGFloat = 220
+
+    /// 13 pt system font matches SwiftUI's default Text in the menu bar.
+    /// Tail truncation only applies when the string is drawn into a rect
+    /// narrower than its natural size.
+    private static func attributedString(_ text: String, color: NSColor,
+                                         monospacedDigits: Bool = false) -> NSAttributedString {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingTail
+        let size = NSFont.systemFontSize
+        return NSAttributedString(string: text, attributes: [
+            .font: monospacedDigits
+                ? NSFont.monospacedDigitSystemFont(ofSize: size, weight: .regular)
+                : NSFont.systemFont(ofSize: size),
+            .foregroundColor: color,
+            .paragraphStyle: paragraph,
+        ])
+    }
+
     /// 0..<1 position of the sweep at `date`; feed `AppState.tick` so every
     /// 8 fps tick advances the band.
     static func phase(at date: Date) -> Double {
         let t = date.timeIntervalSinceReferenceDate
         return t.truncatingRemainder(dividingBy: period) / period
+    }
+
+    /// Static text baked into an image. It cannot stay a SwiftUI Text: a
+    /// MenuBarExtra label holding a single Image plus Texts is flattened to
+    /// the status button's image+title slots, and the image always leads —
+    /// silently ignoring the HStack's textFirst order.
+    static func plain(_ text: String, dark: Bool,
+                      monospacedDigits: Bool = false) -> NSImage {
+        let attributed = attributedString(text, color: dark ? .white : .black,
+                                          monospacedDigits: monospacedDigits)
+        var size = attributed.size()
+        size.width = min(ceil(size.width), maxTextWidth)
+        size.height = ceil(size.height)
+        guard size.width > 0, size.height > 0 else { return NSImage(size: size) }
+        return NSImage(size: size, flipped: false) { rect in
+            // draw(in:) — not draw(at:) — so byTruncatingTail can add the
+            // ellipsis when the string is wider than maxTextWidth.
+            attributed.draw(in: rect)
+            return true
+        }
     }
 
     static func image(_ text: String, phase: Double, dark: Bool) -> NSImage {
@@ -31,23 +72,18 @@ enum ShimmerText {
             renderCount = 0
             lastSampleAt = now
         }
-        // 13 pt system font matches SwiftUI's default Text in the menu bar.
-        let font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
         let full: NSColor = dark ? .white : .black
-        let attributed = NSAttributedString(string: text, attributes: [
-            .font: font,
-            .foregroundColor: full.withAlphaComponent(0.55),
-        ])
+        let attributed = attributedString(text, color: full.withAlphaComponent(0.55))
         var size = attributed.size()
-        size.width = ceil(size.width)
+        size.width = min(ceil(size.width), maxTextWidth)
         size.height = ceil(size.height)
         guard size.width > 0, size.height > 0 else { return NSImage(size: size) }
 
         let band = max(24, size.width * 0.5)
         // phase 0 puts the band fully off the left edge, 1 fully off the right.
         let bandX = CGFloat(phase) * (size.width + band) - band
-        return NSImage(size: size, flipped: false) { _ in
-            attributed.draw(at: .zero)
+        return NSImage(size: size, flipped: false) { rect in
+            attributed.draw(in: rect)
             guard let ctx = NSGraphicsContext.current?.cgContext else { return true }
             ctx.setBlendMode(.sourceAtop)
             NSGradient(colors: [full.withAlphaComponent(0), full, full.withAlphaComponent(0)])?
