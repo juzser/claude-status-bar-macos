@@ -23,6 +23,7 @@ import Testing
         #expect(store.yellowColorHex == "#FFCC00")
         #expect(store.redColorHex == "#FF3B30")
         #expect(store.textAnimationEnabled == true)
+        #expect(store.backgroundStyle == .transparent)
     }
 
     @Test func persistsAcrossInstances() {
@@ -39,6 +40,7 @@ import Testing
         store.yellowColorHex = "#445566"
         store.redColorHex = "#778899"
         store.textAnimationEnabled = false
+        store.backgroundStyle = .dark
 
         let reloaded = SettingsStore(defaults: defaults)
         #expect(reloaded.showUsageOnBar == false)
@@ -52,12 +54,19 @@ import Testing
         #expect(reloaded.yellowColorHex == "#445566")
         #expect(reloaded.redColorHex == "#778899")
         #expect(reloaded.textAnimationEnabled == false)
+        #expect(reloaded.backgroundStyle == .dark)
     }
 
     @Test func unknownDisplayStyleFallsBackToFull() {
         let defaults = makeDefaults()
         defaults.set("hologram", forKey: "displayStyleRaw")
         #expect(SettingsStore(defaults: defaults).displayStyle == .full)
+    }
+
+    @Test func unknownBackgroundStyleFallsBackToTransparent() {
+        let defaults = makeDefaults()
+        defaults.set("neon", forKey: "backgroundStyleRaw")
+        #expect(SettingsStore(defaults: defaults).backgroundStyle == .transparent)
     }
 
     @Test func messageStyleDefaultsToClassic() {

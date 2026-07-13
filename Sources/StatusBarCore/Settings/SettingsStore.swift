@@ -52,10 +52,18 @@ public final class SettingsStore {
     public var textAnimationEnabled: Bool {
         didSet { defaults.set(textAnimationEnabled, forKey: "textAnimationEnabled") }
     }
+    public var backgroundStyleRaw: String {
+        didSet { defaults.set(backgroundStyleRaw, forKey: "backgroundStyleRaw") }
+    }
 
     public var displayStyle: DisplayStyle {
         get { DisplayStyle(rawValue: displayStyleRaw) ?? .full }
         set { displayStyleRaw = newValue.rawValue }
+    }
+
+    public var backgroundStyle: BackgroundStyle {
+        get { BackgroundStyle(rawValue: backgroundStyleRaw) ?? .transparent }
+        set { backgroundStyleRaw = newValue.rawValue }
     }
 
     /// Total: an unknown persisted id falls back to Classic (never crashes,
@@ -78,5 +86,6 @@ public final class SettingsStore {
         yellowColorHex = defaults.string(forKey: "yellowColorHex") ?? "#FFCC00"
         redColorHex = defaults.string(forKey: "redColorHex") ?? "#FF3B30"
         textAnimationEnabled = defaults.object(forKey: "textAnimationEnabled") as? Bool ?? true
+        backgroundStyleRaw = defaults.string(forKey: "backgroundStyleRaw") ?? BackgroundStyle.transparent.rawValue
     }
 }
