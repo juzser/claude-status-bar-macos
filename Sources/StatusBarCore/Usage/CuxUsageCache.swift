@@ -15,16 +15,21 @@ public enum CuxUsageCache {
     /// Entries without a parsable polled_at or without any usage window are
     /// dropped — no timestamp means no freshness story, no windows means
     /// nothing to show.
+    ///
+    /// Newer cux versions key entries as "accountUuid|organizationUuid"
+    /// rather than a bare organizationUuid; the trailing segment is what
+    /// callers join on, so compound keys are split before storing.
     public static func parse(_ data: Data) -> [String: UsageSnapshot] {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return [:]
         }
         var result: [String: UsageSnapshot] = [:]
-        for (orgUuid, value) in root {
+        for (key, value) in root {
             guard let entry = value as? [String: Any],
                   let polledAt = (entry["polled_at"] as? String).flatMap(ISO8601.parse),
                   let snapshot = UsageSnapshot.parse(object: entry, fetchedAt: polledAt)
             else { continue }
+            let orgUuid = key.split(separator: "|").last.map(String.init) ?? key
             result[orgUuid] = snapshot
         }
         return result

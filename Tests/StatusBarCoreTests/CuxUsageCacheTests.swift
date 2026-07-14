@@ -15,7 +15,11 @@ private let fixture = """
     "polled_at": "2026-07-11T09:14:33Z"
   },
   "org-no-windows": { "polled_at": "2026-07-11T09:14:33Z" },
-  "org-no-polled-at": { "five_hour": { "utilization": 50 } }
+  "org-no-polled-at": { "five_hour": { "utilization": 50 } },
+  "acct-ccc|org-ccc": {
+    "five_hour": { "utilization": 42 },
+    "polled_at": "2026-07-11T09:14:33Z"
+  }
 }
 """
 
@@ -37,7 +41,16 @@ private let fixture = """
         let cache = CuxUsageCache.parse(Data(fixture.utf8))
         #expect(cache["org-no-windows"] == nil)
         #expect(cache["org-no-polled-at"] == nil)
-        #expect(cache.count == 2)
+        #expect(cache.count == 3)
+    }
+
+    /// Newer cux versions key entries as "accountUuid|organizationUuid"
+    /// instead of a bare organizationUuid — the join in AppState.usageInputs
+    /// looks up by organizationUuid alone, so the compound key must be split.
+    @Test func splitsCompoundAccountOrgKey() {
+        let cache = CuxUsageCache.parse(Data(fixture.utf8))
+        #expect(cache["org-ccc"]?.fiveHour?.utilization == 42)
+        #expect(cache["acct-ccc|org-ccc"] == nil)
     }
 
     @Test func malformedDataYieldsEmpty() {
@@ -56,6 +69,6 @@ private let fixture = """
             .appendingPathComponent("cux-cache-\(UUID().uuidString).json")
         defer { try? FileManager.default.removeItem(at: file) }
         try Data(fixture.utf8).write(to: file)
-        #expect(CuxUsageCache.load(file: file).count == 2)
+        #expect(CuxUsageCache.load(file: file).count == 3)
     }
 }
