@@ -33,24 +33,76 @@ with multi-account support.
 
 ## Install
 
-Download `ClaudeStatusBar.dmg` from Releases, drag to Applications, launch.
-The app lives in the menu bar only (no Dock icon).
+1. **Prerequisites**
+   - macOS 14 (Sonoma) or later.
+   - [Claude Code](https://docs.claude.com/en/docs/claude-code) installed, if
+     you want the menu bar to show live session activity (step 4 below). The
+     app also works purely as a usage monitor without it.
+   - Command Line Tools only if you're building from source — no full Xcode
+     install needed: `xcode-select --install`.
 
-See [INSTALL.md](INSTALL.md) for a detailed step-by-step walkthrough,
-including building from source and setting up multi-account usage.
+2. **Get the app**
 
-The app is ad-hoc signed, so macOS quarantines the downloaded copy and the
-first launch is refused ("cannot verify" / "damaged"). Right-click the app in
-Applications and choose **Open** (twice if needed), or clear the quarantine
-flag directly:
+   Download `ClaudeStatusBar.dmg` from
+   [Releases](https://github.com/juzser/claude-status-bar-macos/releases),
+   open it, and drag `ClaudeStatusBar.app` to `/Applications`.
 
-```sh
-xattr -d com.apple.quarantine /Applications/ClaudeStatusBar.app
-```
+   To build from source instead (contributors, or Command-Line-Tools-only
+   setups), see [Build from source](#build-from-source) below, then:
 
-To enable activity tracking: Settings → Claude Code → Install. This adds
-hook entries to `~/.claude/settings.json` (a timestamped backup is written
-first; Remove deletes exactly what Install added).
+   ```sh
+   cp -R dist/ClaudeStatusBar.app /Applications/
+   ```
+
+3. **First launch / Gatekeeper**
+
+   The app is ad-hoc signed, so macOS quarantines it and the first launch is
+   refused ("cannot verify" / "damaged") — expected either way you installed
+   it. Right-click the app in Applications and choose **Open** (twice if
+   needed), or clear the quarantine flag directly:
+
+   ```sh
+   xattr -d com.apple.quarantine /Applications/ClaudeStatusBar.app
+   ```
+
+   The app lives in the menu bar only (no Dock icon) — look for its icon
+   there after launch.
+
+4. **Enable activity tracking**
+
+   Settings → **Claude Code** tab → **Install**. This adds hook entries for
+   `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`,
+   and `Notification` to `~/.claude/settings.json` (a timestamped backup is
+   written first; running Install again is safe — it replaces its own prior
+   entry rather than duplicating it). **Remove** deletes exactly what
+   **Install** added.
+
+5. **Multi-account usage (optional)**
+
+   Install [cux](https://cux.inulute.com) and add your accounts — the app
+   reads account slots straight from `~/.cux` (falling back to the single
+   account in `~/.claude/.credentials.json`). Each cux slot shows up as its
+   own row in the popover with 5h/7d usage bars; click **Switch** to make a
+   different slot active. If a row shows **re-login needed**, click
+   **Log in**: for a cux slot this runs `cux switch <slot> && cux /login`,
+   for the bare `~/.claude` account it runs `claude /login` — either opens a
+   terminal window to complete the OAuth flow.
+
+6. **Verify it works**
+
+   The menu bar label shows (depending on display style): activity text
+   (e.g. "Editing… · 12s"), the Clawd icon, and your active account's
+   5-hour usage percentage. Click it to open the popover for per-account
+   usage bars and active Claude Code sessions.
+
+7. **Uninstall**
+
+   Settings → **Claude Code** tab → **Remove**, quit the app (menu bar icon
+   → popover → **Quit**), then delete it:
+
+   ```sh
+   rm -rf /Applications/ClaudeStatusBar.app
+   ```
 
 ## Build from source
 
