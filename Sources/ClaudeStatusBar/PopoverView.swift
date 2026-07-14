@@ -8,6 +8,10 @@ struct PopoverView: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             VStack(alignment: .leading, spacing: 14) {
+                if let release = appState.updateAvailable {
+                    Text("Update available: \(release.tagName)")
+                        .font(.caption).foregroundStyle(.orange)
+                }
                 SessionsSection(sessions: appState.sessions,
                                 titles: appState.sessionTitles, now: context.date)
                 Divider()
