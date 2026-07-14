@@ -24,15 +24,18 @@ final class AppState {
     private(set) var currentVerb: String
     /// 1 Hz heartbeat for the menu bar elapsed counter; advances only while busy.
     private(set) var tick = Date()
+    private(set) var updateAvailable: ReleaseInfo?
     let usageStore: UsageStore
     let paths: AppPaths
 
     private let cuxRefresher = CuxRefresher()
     private let cuxAccountSwitcher = CuxAccountSwitcher()
+    private let updateChecker = UpdateChecker()
     private var verbCycler = VerbCycler()
     private var watcher: DirectoryWatcher?
     private var pollTask: Task<Void, Never>?
     private var reaggregateTask: Task<Void, Never>?
+    private var updateCheckTask: Task<Void, Never>?
     private var tickTask: Task<Void, Never>?
     private var tickInterval: Duration = .seconds(1)
     private var pollCycle = 0
@@ -79,6 +82,12 @@ final class AppState {
                 await self?.pollOnce()
                 let minutes = self?.pollMinutes ?? 5
                 try? await Task.sleep(for: .seconds(minutes * 60))
+            }
+        }
+        updateCheckTask = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.checkForUpdates()
+                try? await Task.sleep(for: .seconds(Int(UpdateChecker.minInterval)))
             }
         }
     }
@@ -145,6 +154,21 @@ final class AppState {
     func rerollThinkingPhrase() {
         verbCycler.reset()
         currentVerb = verbCycler.next(from: settings.messageStyle.thinking)
+    }
+
+    /// Manual "Check for Updates" button: bypasses the background loop's
+    /// rate limit. Only overwrites `updateAvailable` when a newer release is
+    /// actually found — a failed or up-to-date check leaves it as-is.
+    func checkForUpdatesNow() async {
+        if let release = await updateChecker.checkNow(currentVersion: AppVersion.current) {
+            updateAvailable = release
+        }
+    }
+
+    private func checkForUpdates() async {
+        if let release = await updateChecker.checkIfNeeded(currentVersion: AppVersion.current) {
+            updateAvailable = release
+        }
     }
 
     func refreshUsageNow() async {
