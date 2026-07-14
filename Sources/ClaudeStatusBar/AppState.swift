@@ -213,9 +213,17 @@ final class AppState {
         }
     }
 
-    /// Token is read at fetch time only, kept in a local, never stored or logged.
+    /// Token is read at fetch time only, kept in a local, never stored or
+    /// logged. cux v0.2.11+ keeps the real token only in the Keychain, never
+    /// in a slot's oauth.json — but cux swaps just the *active* slot's token
+    /// into the Keychain, so the fallback is gated on `isActive` to avoid
+    /// misattributing that token to other, inactive accounts.
     private func token(for account: Account) -> String? {
-        guard let data = try? Data(contentsOf: account.oauthURL) else { return nil }
-        return AccountDiscovery.accessToken(from: data)
+        if let data = try? Data(contentsOf: account.oauthURL),
+           let token = AccountDiscovery.accessToken(from: data) {
+            return token
+        }
+        guard account.isActive else { return nil }
+        return AccountDiscovery.keychainAccessToken()
     }
 }

@@ -126,3 +126,38 @@ private func makeCuxFixture(in root: URL) throws {
         #expect(AccountDiscovery.accessToken(from: Data("{}".utf8)) == nil)
     }
 }
+
+/// SecItemCopyMatching itself can't be exercised in a unit test, so
+/// keychainAccessToken takes an injectable reader — these tests cover the
+/// parsing/integration path around it, not the real Keychain call.
+@Suite struct KeychainAccessTokenTests {
+    @Test func returnsTokenParsedFromReaderData() {
+        let data = Data(#"{"claudeAiOauth":{"accessToken":"keychain-token"}}"#.utf8)
+        let token = AccountDiscovery.keychainAccessToken(
+            service: "Claude Code-credentials", reader: { _ in data })
+        #expect(token == "keychain-token")
+    }
+
+    @Test func passesServiceThroughToReader() {
+        var seenService: String?
+        _ = AccountDiscovery.keychainAccessToken(
+            service: "Claude Code-credentials",
+            reader: { service in
+                seenService = service
+                return nil
+            })
+        #expect(seenService == "Claude Code-credentials")
+    }
+
+    @Test func nilWhenReaderFindsNothing() {
+        let token = AccountDiscovery.keychainAccessToken(
+            service: "Claude Code-credentials", reader: { _ in nil })
+        #expect(token == nil)
+    }
+
+    @Test func nilWhenReaderDataIsMalformed() {
+        let token = AccountDiscovery.keychainAccessToken(
+            service: "Claude Code-credentials", reader: { _ in Data("nope".utf8) })
+        #expect(token == nil)
+    }
+}

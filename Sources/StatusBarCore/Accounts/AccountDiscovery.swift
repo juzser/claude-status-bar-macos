@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 public struct Account: Equatable, Sendable, Identifiable {
     public let id: String
@@ -92,5 +93,29 @@ public enum AccountDiscovery {
             return nil
         }
         return obj["organizationUuid"] as? String
+    }
+
+    /// cux v0.2.11+ keeps the real bearer token only in the macOS Keychain
+    /// (item labeled "Claude Code-credentials"), not in any slot's
+    /// oauth.json. `reader` is injectable so tests can exercise the parsing
+    /// path without touching the real Keychain.
+    public static func keychainAccessToken(
+        service: String = "Claude Code-credentials",
+        reader: (String) -> Data? = defaultKeychainReader
+    ) -> String? {
+        reader(service).flatMap(accessToken(from:))
+    }
+
+    public static func defaultKeychainReader(service: String) -> Data? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrLabel as String: service,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var item: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+              let data = item as? Data else { return nil }
+        return data
     }
 }

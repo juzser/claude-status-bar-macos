@@ -70,8 +70,13 @@ features (e.g. exit tests, custom traits) when writing tests here.
   `main.swift` swallows every error into a silent `exit(0)` — the hook is
   fire-and-forget from Claude Code's perspective and must never block or
   corrupt a session.
-- **OAuth tokens are read from disk only at request time**, kept in a local
-  variable, and never logged, cached, or written elsewhere (`AppState.token`).
+- **OAuth tokens are read at request time only**, kept in a local variable,
+  and never logged, cached, or written elsewhere (`AppState.token`). Newer
+  cux versions (v0.2.11+) keep the real token only in the macOS Keychain, not
+  in any slot's `oauth.json`, so `token(for:)` falls back to
+  `AccountDiscovery.keychainAccessToken()` — but only when `account.isActive`,
+  since cux swaps just the active slot's token into the Keychain and applying
+  the fallback to inactive accounts would misattribute that token to them.
 
 ## Workflow
 
