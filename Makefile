@@ -13,6 +13,4 @@ app:
 	bash scripts/make-app.sh
 
 dmg: app
-	rm -f dist/ClaudeStatusBar.dmg
-	hdiutil create -volname ClaudeStatusBar -srcfolder dist/ClaudeStatusBar.app \
-		-ov -format UDZO dist/ClaudeStatusBar.dmg
+	bash scripts/make-dmg.sh
