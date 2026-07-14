@@ -56,10 +56,10 @@ with multi-account support.
 
 3. **First launch / Gatekeeper**
 
-   The app is ad-hoc signed, so macOS quarantines it and the first launch is
-   refused ("cannot verify" / "damaged") — expected either way you installed
-   it. Right-click the app in Applications and choose **Open** (twice if
-   needed), or clear the quarantine flag directly:
+   The app is self-signed (not notarized by Apple), so macOS quarantines it
+   and the first launch is refused ("cannot verify" / "damaged") — expected
+   either way you installed it. Right-click the app in Applications and
+   choose **Open** (twice if needed), or clear the quarantine flag directly:
 
    ```sh
    xattr -d com.apple.quarantine /Applications/ClaudeStatusBar.app
@@ -114,6 +114,14 @@ make test    # unit + integration tests
 make app     # dist/ClaudeStatusBar.app
 make dmg     # dist/ClaudeStatusBar.dmg
 ```
+
+`make app` signs the app with a self-signed "ClaudeStatusBar Local Signing"
+identity, generating it into your login keychain on first run if it doesn't
+already exist (`scripts/ensure-signing-identity.sh`). Keeping this identity
+stable across rebuilds — rather than ad-hoc signing, which re-derives its
+identity from the binary's own bytes every build — is what lets macOS
+Keychain "Always Allow" grants (e.g. for cux account credentials) survive
+rebuilding and reinstalling the app.
 
 ## Security notes
 

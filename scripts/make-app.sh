@@ -76,5 +76,6 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-codesign --force --deep --sign - "$APP"
+source scripts/ensure-signing-identity.sh
+codesign --force --deep --sign "$SIGNING_IDENTITY" "$APP"
 echo "Built $APP (version $VERSION)"

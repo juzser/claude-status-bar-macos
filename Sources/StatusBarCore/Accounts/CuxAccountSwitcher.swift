@@ -34,30 +34,13 @@ public actor CuxAccountSwitcher {
         return await run(binary, ["switch", String(slot)])
     }
 
-    /// Runs `<binary> <arguments>`, discarding output. Returns true only on
-    /// exit status 0. Terminates the process if it outlives `timeout`
-    /// (terminate() still fires the termination handler, so the continuation
-    /// is resumed exactly once).
-    public static func invoke(binary: String, arguments: [String], timeout: TimeInterval) async -> Bool {
-        await withCheckedContinuation { continuation in
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: binary)
-            process.arguments = arguments
-            process.standardOutput = FileHandle.nullDevice
-            process.standardError = FileHandle.nullDevice
-            process.terminationHandler = { finished in
-                continuation.resume(returning: finished.terminationStatus == 0)
-            }
-            do {
-                try process.run()
-            } catch {
-                process.terminationHandler = nil
-                continuation.resume(returning: false)
-                return
-            }
-            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
-                if process.isRunning { process.terminate() }
-            }
-        }
+    /// Runs `<binary> <arguments>` via `CuxShellInvoker`, discarding output.
+    /// Returns true only on exit status 0. `environment` is nil in
+    /// production (inherit) — tests override it to exercise PATH resolution
+    /// hermetically.
+    public static func invoke(binary: String, arguments: [String], timeout: TimeInterval,
+                              environment: [String: String]? = nil) async -> Bool {
+        await CuxShellInvoker.invoke(binary: binary, arguments: arguments, timeout: timeout,
+                                     environment: environment)
     }
 }

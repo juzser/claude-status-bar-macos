@@ -104,8 +104,18 @@ struct CuxRefresherTests {
         try FileManager.default.setAttributes([.posixPermissions: 0o755],
                                               ofItemAtPath: hang.path)
 
+        // A hermetic HOME (no real ~/.zshrc) keeps interactive zsh startup
+        // near-instant. Inheriting the real environment here would let the
+        // developer machine's actual ~/.zshrc (nvm hooks etc.) race past
+        // this test's short timeout before the hung process even forks,
+        // so the kill would target rc-loading helpers instead of the hang.
+        let emptyHome = dir.appendingPathComponent("empty-home")
+        try FileManager.default.createDirectory(at: emptyHome, withIntermediateDirectories: true)
+
         let started = Date()
-        #expect(await CuxRefresher.invoke(binary: hang.path, timeout: 0.5) == false)
+        #expect(await CuxRefresher.invoke(
+            binary: hang.path, timeout: 0.5,
+            environment: ["HOME": emptyHome.path, "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"]) == false)
         #expect(Date().timeIntervalSince(started) < 5)
     }
 }
