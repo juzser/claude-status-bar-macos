@@ -16,6 +16,8 @@ struct SettingsView: View {
                 .tabItem { Label("Accounts", systemImage: "person.2") }
             ClaudeCodeTab()
                 .tabItem { Label("Claude Code", systemImage: "terminal") }
+            AboutTab(appState: appState)
+                .tabItem { Label("About", systemImage: "info.circle") }
         }
         .frame(width: 440)
         .padding(.bottom, 8)
@@ -226,5 +228,34 @@ private struct ClaudeCodeTab: View {
             errorMessage = "Could not update settings.json: \(error.localizedDescription)"
         }
         refresh()
+    }
+}
+
+private struct AboutTab: View {
+    let appState: AppState
+    @State private var isChecking = false
+
+    var body: some View {
+        Form {
+            LabeledContent("Version", value: AppVersion.current)
+            if let release = appState.updateAvailable {
+                Text("Update available: \(release.tagName)")
+                    .foregroundStyle(.orange)
+                Button("View Release") {
+                    NSWorkspace.shared.open(release.htmlURL)
+                }
+            } else {
+                Text("You're up to date").foregroundStyle(.secondary)
+            }
+            Button("Check for Updates") {
+                isChecking = true
+                Task {
+                    await appState.checkForUpdatesNow()
+                    isChecking = false
+                }
+            }
+            .disabled(isChecking)
+        }
+        .padding(20)
     }
 }
