@@ -24,6 +24,15 @@ public enum MessageStyles {
         all.first { $0.id == id } ?? classic
     }
 
+    /// Total lookup across both language catalogs. English delegates to the
+    /// existing `style(id:)`; Vietnamese delegates to `MessageStylesVi`.
+    public static func style(id: String, language: Language) -> MessageStyle {
+        switch language {
+        case .english: return style(id: id)
+        case .vietnamese: return MessageStylesVi.style(id: id)
+        }
+    }
+
     static let classic = MessageStyle(
         id: "classic", name: "Classic",
         thinking: ThinkingVerbs.all,

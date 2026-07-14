@@ -84,6 +84,39 @@ import Testing
         #expect(store.messageStyleId == "vaporwave")
         #expect(defaults.string(forKey: "messageStyleId") == "vaporwave")
     }
+
+    @Test func languageDefaultsToEnglish() {
+        let store = SettingsStore(defaults: makeDefaults())
+        #expect(store.languageRaw == "english")
+        #expect(store.language == .english)
+    }
+
+    @Test func languagePersistsAcrossInstances() {
+        let defaults = makeDefaults()
+        let store = SettingsStore(defaults: defaults)
+        store.language = .vietnamese
+        let reloaded = SettingsStore(defaults: defaults)
+        #expect(reloaded.languageRaw == "vietnamese")
+        #expect(reloaded.language == .vietnamese)
+    }
+
+    @Test func unknownLanguageRawFallsBackToEnglishWithoutWriteBack() {
+        let defaults = makeDefaults()
+        defaults.set("klingon", forKey: "languageRaw")
+        let store = SettingsStore(defaults: defaults)
+        #expect(store.language == .english)
+        // The raw value is preserved — never rewritten to "english".
+        #expect(store.languageRaw == "klingon")
+        #expect(defaults.string(forKey: "languageRaw") == "klingon")
+    }
+
+    @Test func messageStyleReflectsLanguage() {
+        let store = SettingsStore(defaults: makeDefaults())
+        store.messageStyleId = "pirate"
+        #expect(store.messageStyle.waiting == "Cap'n needs orders")
+        store.language = .vietnamese
+        #expect(store.messageStyle.waiting == "Chờ lệnh thuyền trưởng")
+    }
 }
 
 @Suite struct HookLocatorTests {

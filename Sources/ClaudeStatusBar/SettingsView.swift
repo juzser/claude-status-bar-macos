@@ -64,6 +64,16 @@ private struct GeneralTab: View {
                 // (≤1 s).
                 appState.rerollThinkingPhrase()
             }
+            Picker("Language", selection: $settings.language) {
+                Text("English").tag(Language.english)
+                Text("Tiếng Việt").tag(Language.vietnamese)
+            }
+            .onChange(of: settings.language) {
+                // Same instant-feedback mechanism as the style picker: a bar
+                // currently in .thinking re-renders now; tool/waiting text
+                // re-themes on the next elapsed tick (≤1 s).
+                appState.rerollThinkingPhrase()
+            }
             Picker("Usage poll interval", selection: $settings.pollMinutes) {
                 Text("1 min").tag(1)
                 Text("5 min").tag(5)
