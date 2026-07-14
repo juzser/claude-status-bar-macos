@@ -31,6 +31,9 @@ public final class SettingsStore {
     public var messageStyleId: String {
         didSet { defaults.set(messageStyleId, forKey: "messageStyleId") }
     }
+    public var languageRaw: String {
+        didSet { defaults.set(languageRaw, forKey: "languageRaw") }
+    }
     /// Hex ("#RRGGBB") for the "normal" (below-yellow) usage level. Default is
     /// NSColor.systemGreen's sRGB hex, so a fresh install renders identically
     /// to the old hardcoded color.
@@ -58,10 +61,17 @@ public final class SettingsStore {
         set { displayStyleRaw = newValue.rawValue }
     }
 
+    /// Total: an unrecognized persisted value falls back to English (never
+    /// crashes, never writes the fallback back to defaults).
+    public var language: Language {
+        get { Language(rawValue: languageRaw) ?? .english }
+        set { languageRaw = newValue.rawValue }
+    }
+
     /// Total: an unknown persisted id falls back to Classic (never crashes,
     /// never writes the fallback back to defaults).
     public var messageStyle: MessageStyle {
-        MessageStyles.style(id: messageStyleId)
+        MessageStyles.style(id: messageStyleId, language: language)
     }
 
     public init(defaults: UserDefaults = .standard) {
@@ -74,6 +84,7 @@ public final class SettingsStore {
         redAt = defaults.object(forKey: "redAt") as? Double ?? 80
         hiddenAccounts = defaults.stringArray(forKey: "hiddenAccounts") ?? []
         messageStyleId = defaults.string(forKey: "messageStyleId") ?? "classic"
+        languageRaw = defaults.string(forKey: "languageRaw") ?? Language.english.rawValue
         normalColorHex = defaults.string(forKey: "normalColorHex") ?? "#34C759"
         yellowColorHex = defaults.string(forKey: "yellowColorHex") ?? "#FFCC00"
         redColorHex = defaults.string(forKey: "redColorHex") ?? "#FF3B30"
