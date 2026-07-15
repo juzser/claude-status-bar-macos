@@ -22,6 +22,9 @@ final class AppState {
     private(set) var display: SessionRecord?
     private(set) var accounts: [Account] = []
     private(set) var currentVerb: String
+    /// Set when `switchAccount` fails, cleared on the next attempt that
+    /// succeeds — surfaced as an inline warning next to the account's row.
+    private(set) var switchFailedAccountId: String?
     /// 1 Hz heartbeat for the menu bar elapsed counter; advances only while busy.
     private(set) var tick = Date()
     private(set) var updateAvailable: ReleaseInfo?
@@ -185,7 +188,8 @@ final class AppState {
     /// has nothing to switch to.
     func switchAccount(_ account: Account) async {
         guard let slot = account.slot else { return }
-        _ = await cuxAccountSwitcher.switchTo(slot: slot)
+        let succeeded = await cuxAccountSwitcher.switchTo(slot: slot)
+        switchFailedAccountId = succeeded ? nil : account.id
         await refreshUsageNow()
     }
 
@@ -232,8 +236,8 @@ final class AppState {
         let cache = CuxUsageCache.load(
             file: cuxRoot.appendingPathComponent("runtime/usage-cache.json"))
         return accounts.map { account in
-            (account, token(for: account),
-             account.organizationUuid.flatMap { cache[$0] })
+            let cached = account.organizationUuid.flatMap { cache[$0] }
+            return (account, token(for: account, cached: cached), cached)
         }
     }
 
@@ -242,12 +246,22 @@ final class AppState {
     /// in a slot's oauth.json — but cux swaps just the *active* slot's token
     /// into the Keychain, so the fallback is gated on `isActive` to avoid
     /// misattributing that token to other, inactive accounts.
-    private func token(for account: Account) -> String? {
+    ///
+    /// Also gated on `cached == nil`: cux rewrites the shared Keychain item
+    /// on every `cux switch`, which resets macOS's "Always Allow" grant for
+    /// it, so touching the Keychain is what actually re-prompts the user —
+    /// not the switch itself. A cux-cache snapshot (even a stale one) is
+    /// already enough for UsageStore to display usage, so once cux has
+    /// cached anything for this account's org there's nothing left for the
+    /// Keychain read to buy beyond a fresher percentage, at the cost of a
+    /// prompt on every poll cycle. Only fall back to the Keychain when cux
+    /// hasn't cached this org at all yet (e.g. a brand-new slot).
+    private func token(for account: Account, cached: UsageSnapshot?) -> String? {
         if let data = try? Data(contentsOf: account.oauthURL),
            let token = AccountDiscovery.accessToken(from: data) {
             return token
         }
-        guard account.isActive else { return nil }
+        guard account.isActive, cached == nil else { return nil }
         return AccountDiscovery.keychainAccessToken()
     }
 }
