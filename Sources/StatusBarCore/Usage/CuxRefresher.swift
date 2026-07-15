@@ -43,13 +43,19 @@ public actor CuxRefresher {
         _ = await run(binary)
     }
 
-    /// Runs `<binary> usage refresh` via `CuxShellInvoker`, discarding output.
-    /// Returns true only on exit status 0. `environment` is nil in
-    /// production (inherit) — tests override it to exercise PATH resolution
-    /// hermetically.
+    /// Runs `<binary> usage refresh` via `CuxShellInvoker`. Returns true only
+    /// on exit status 0. `environment` is nil in production (inherit) —
+    /// tests override it to exercise PATH resolution hermetically.
+    /// `diagnosticLog` defaults to a real path under `AppPaths().root` so
+    /// production refreshes always leave behind evidence of the last
+    /// attempt; tests override it to a temp path to avoid touching the real
+    /// app support dir.
     public static func invoke(binary: String, timeout: TimeInterval,
-                              environment: [String: String]? = nil) async -> Bool {
+                              environment: [String: String]? = nil,
+                              diagnosticLog: URL? = AppPaths().root
+                                  .appendingPathComponent("cux-refresh.log")) async -> Bool {
         await CuxShellInvoker.invoke(binary: binary, arguments: ["usage", "refresh"],
-                                     timeout: timeout, environment: environment)
+                                     timeout: timeout, environment: environment,
+                                     diagnosticLog: diagnosticLog)
     }
 }

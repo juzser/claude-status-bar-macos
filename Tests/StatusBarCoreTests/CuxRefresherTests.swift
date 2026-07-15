@@ -86,10 +86,13 @@ struct CuxRefresherTests {
                                                   ofItemAtPath: script.path)
         }
 
-        #expect(await CuxRefresher.invoke(binary: ok.path, timeout: 5) == true)
-        #expect(await CuxRefresher.invoke(binary: bad.path, timeout: 5) == false)
+        let diagnosticLog = dir.appendingPathComponent("diag.log")
+        #expect(await CuxRefresher.invoke(binary: ok.path, timeout: 5,
+                                          diagnosticLog: diagnosticLog) == true)
+        #expect(await CuxRefresher.invoke(binary: bad.path, timeout: 5,
+                                          diagnosticLog: diagnosticLog) == false)
         #expect(await CuxRefresher.invoke(binary: dir.appendingPathComponent("missing").path,
-                                          timeout: 5) == false)
+                                          timeout: 5, diagnosticLog: diagnosticLog) == false)
     }
 
     @Test("invoke kills a hung binary at the timeout")
@@ -115,7 +118,8 @@ struct CuxRefresherTests {
         let started = Date()
         #expect(await CuxRefresher.invoke(
             binary: hang.path, timeout: 0.5,
-            environment: ["HOME": emptyHome.path, "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"]) == false)
+            environment: ["HOME": emptyHome.path, "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"],
+            diagnosticLog: dir.appendingPathComponent("diag.log")) == false)
         #expect(Date().timeIntervalSince(started) < 5)
     }
 }

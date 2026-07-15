@@ -34,13 +34,17 @@ public actor CuxAccountSwitcher {
         return await run(binary, ["switch", String(slot)])
     }
 
-    /// Runs `<binary> <arguments>` via `CuxShellInvoker`, discarding output.
-    /// Returns true only on exit status 0. `environment` is nil in
-    /// production (inherit) — tests override it to exercise PATH resolution
-    /// hermetically.
+    /// Runs `<binary> <arguments>` via `CuxShellInvoker`. Returns true only on
+    /// exit status 0. `environment` is nil in production (inherit) — tests
+    /// override it to exercise PATH resolution hermetically. `diagnosticLog`
+    /// defaults to a real path under `AppPaths().root` so production
+    /// switches always leave behind evidence of the last attempt; tests
+    /// override it to a temp path to avoid touching the real app support dir.
     public static func invoke(binary: String, arguments: [String], timeout: TimeInterval,
-                              environment: [String: String]? = nil) async -> Bool {
+                              environment: [String: String]? = nil,
+                              diagnosticLog: URL? = AppPaths().root
+                                  .appendingPathComponent("cux-switch.log")) async -> Bool {
         await CuxShellInvoker.invoke(binary: binary, arguments: arguments, timeout: timeout,
-                                     environment: environment)
+                                     environment: environment, diagnosticLog: diagnosticLog)
     }
 }
