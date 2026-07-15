@@ -16,32 +16,68 @@ import Darwin
 /// the same assumption TerminalLauncher already makes about the user's
 /// shell being zsh.
 enum CuxShellInvoker {
-    /// Runs `<binary> <arguments>` inside an interactive zsh, discarding
-    /// output. Returns true only on exit status 0. Terminates the process
-    /// if it outlives `timeout` (terminate() still fires the termination
-    /// handler, so the continuation is resumed exactly once).
+    /// Runs `<binary> <arguments>` inside an interactive zsh. Returns true
+    /// only on exit status 0. Terminates the process if it outlives
+    /// `timeout` (terminate() still fires the termination handler, so the
+    /// continuation is resumed exactly once).
     /// `environment` defaults to nil (inherit the app's own environment,
     /// including whatever HOME LaunchServices set — that's what lets zsh
     /// find the user's real ~/.zshrc); tests override it to point zsh's rc
     /// lookup at a hermetic fixture instead.
+    /// `diagnosticLog`, when non-nil, overwrites that file with a snapshot
+    /// (command, duration, exit status, captured stdout/stderr) of this one
+    /// invocation — there to give the still-unexplained Keychain re-prompt
+    /// bug real evidence instead of the silent `Bool` this used to return.
+    /// Defaults to nil so tests that don't ask for it stay side-effect-free.
     static func invoke(binary: String, arguments: [String], timeout: TimeInterval,
-                       environment: [String: String]? = nil) async -> Bool {
-        await withCheckedContinuation { continuation in
+                       environment: [String: String]? = nil,
+                       diagnosticLog: URL? = nil) async -> Bool {
+        let startedAt = Date()
+        return await withCheckedContinuation { continuation in
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/bin/zsh")
             process.arguments = ["-ilc", command(binary: binary, arguments: arguments)]
             if let environment {
                 process.environment = environment
             }
-            process.standardOutput = FileHandle.nullDevice
-            process.standardError = FileHandle.nullDevice
+            let stdoutPipe = Pipe()
+            let stderrPipe = Pipe()
+            if diagnosticLog != nil {
+                process.standardOutput = stdoutPipe
+                process.standardError = stderrPipe
+            } else {
+                process.standardOutput = FileHandle.nullDevice
+                process.standardError = FileHandle.nullDevice
+            }
             process.terminationHandler = { finished in
+                if let diagnosticLog {
+                    // Reading here (rather than an async readabilityHandler)
+                    // can block if a surviving descendant still holds the
+                    // pipe's write end open — but that's bounded by the same
+                    // `timeout`-driven kill loop below, so it adds no new
+                    // unbounded hang.
+                    let stdout = String(data: stdoutPipe.fileHandleForReading.readDataToEndOfFile(),
+                                        encoding: .utf8) ?? ""
+                    let stderr = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(),
+                                        encoding: .utf8) ?? ""
+                    writeDiagnostic(to: diagnosticLog, binary: binary, arguments: arguments,
+                                    exitCode: finished.terminationStatus,
+                                    terminationReason: finished.terminationReason,
+                                    stdout: stdout, stderr: stderr,
+                                    duration: Date().timeIntervalSince(startedAt))
+                }
                 continuation.resume(returning: finished.terminationStatus == 0)
             }
             do {
                 try process.run()
             } catch {
                 process.terminationHandler = nil
+                if let diagnosticLog {
+                    writeDiagnostic(to: diagnosticLog, binary: binary, arguments: arguments,
+                                    exitCode: -1, terminationReason: .exit, stdout: "",
+                                    stderr: "process.run() failed: \(error)",
+                                    duration: Date().timeIntervalSince(startedAt))
+                }
                 continuation.resume(returning: false)
                 return
             }
@@ -101,6 +137,30 @@ enum CuxShellInvoker {
             queue.append(contentsOf: children)
         }
         return result
+    }
+
+    /// Overwrites `url` with a human-readable snapshot of one invocation.
+    /// Creates the parent directory if needed; silently drops the write on
+    /// any filesystem error since this is diagnostics, not core behavior.
+    private static func writeDiagnostic(to url: URL, binary: String, arguments: [String],
+                                        exitCode: Int32, terminationReason: Process.TerminationReason,
+                                        stdout: String, stderr: String, duration: TimeInterval) {
+        let reason = terminationReason == .exit ? "exit" : "uncaughtSignal"
+        let text = """
+        timestamp: \(Date())
+        command: \(command(binary: binary, arguments: arguments))
+        duration: \(String(format: "%.3f", duration))s
+        terminationReason: \(reason)
+        exitCode: \(exitCode)
+        --- stdout ---
+        \(stdout)
+        --- stderr ---
+        \(stderr)
+
+        """
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                  withIntermediateDirectories: true)
+        try? text.write(to: url, atomically: true, encoding: .utf8)
     }
 
     private static func command(binary: String, arguments: [String]) -> String {

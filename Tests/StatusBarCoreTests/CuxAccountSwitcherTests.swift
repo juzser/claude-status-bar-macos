@@ -80,12 +80,13 @@ struct CuxAccountSwitcherTests {
                                                   ofItemAtPath: script.path)
         }
 
+        let diagnosticLog = dir.appendingPathComponent("diag.log")
         #expect(await CuxAccountSwitcher.invoke(binary: ok.path, arguments: ["switch", "1"],
-                                                 timeout: 5) == true)
+                                                 timeout: 5, diagnosticLog: diagnosticLog) == true)
         #expect(await CuxAccountSwitcher.invoke(binary: bad.path, arguments: ["switch", "1"],
-                                                 timeout: 5) == false)
+                                                 timeout: 5, diagnosticLog: diagnosticLog) == false)
         #expect(await CuxAccountSwitcher.invoke(
             binary: dir.appendingPathComponent("missing").path,
-            arguments: ["switch", "1"], timeout: 5) == false)
+            arguments: ["switch", "1"], timeout: 5, diagnosticLog: diagnosticLog) == false)
     }
 }
