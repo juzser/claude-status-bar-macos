@@ -230,38 +230,33 @@ final class AppState {
     /// Pairs each account with its token and, for tokenless cux slots, the
     /// snapshot cux itself polled into ~/.cux/runtime/usage-cache.json
     /// (joined on organizationUuid). Reads the cache file once per refresh.
+    ///
+    /// Token resolution itself lives in StatusBarCore's `TokenResolution` (see
+    /// its doc comment for the isActive/cached gating this replays). Each
+    /// account's decision is additionally logged to `token-resolution.log`
+    /// under `paths.root` — there to give the still-unexplained intermittent
+    /// Keychain re-prompt real evidence: if the log from the exact cycle when
+    /// the prompt fired shows `tokenSource=keychainFallback` alongside an
+    /// unexpectedly nil orgUuid or false cuxCacheHit for an account cux has
+    /// already cached, that confirms a transient read racing cux's own
+    /// rewrite of oauth.json / usage-cache.json, rather than leaving it a
+    /// guess. Never logs a token value.
     private func usageInputs(
         _ accounts: [Account]
     ) -> [(account: Account, token: String?, cached: UsageSnapshot?)] {
         let cache = CuxUsageCache.load(
             file: cuxRoot.appendingPathComponent("runtime/usage-cache.json"))
-        return accounts.map { account in
+        var diagnostics: [TokenResolutionDiagnostics.Entry] = []
+        let result = accounts.map { account -> (account: Account, token: String?, cached: UsageSnapshot?) in
             let cached = account.organizationUuid.flatMap { cache[$0] }
-            return (account, token(for: account, cached: cached), cached)
+            let (token, source) = TokenResolution.resolve(account: account, cached: cached)
+            diagnostics.append(.init(accountId: account.id, isActive: account.isActive,
+                                     organizationUuid: account.organizationUuid,
+                                     cacheHit: cached != nil, source: source))
+            return (account, token, cached)
         }
-    }
-
-    /// Token is read at fetch time only, kept in a local, never stored or
-    /// logged. cux v0.2.11+ keeps the real token only in the Keychain, never
-    /// in a slot's oauth.json — but cux swaps just the *active* slot's token
-    /// into the Keychain, so the fallback is gated on `isActive` to avoid
-    /// misattributing that token to other, inactive accounts.
-    ///
-    /// Also gated on `cached == nil`: cux rewrites the shared Keychain item
-    /// on every `cux switch`, which resets macOS's "Always Allow" grant for
-    /// it, so touching the Keychain is what actually re-prompts the user —
-    /// not the switch itself. A cux-cache snapshot (even a stale one) is
-    /// already enough for UsageStore to display usage, so once cux has
-    /// cached anything for this account's org there's nothing left for the
-    /// Keychain read to buy beyond a fresher percentage, at the cost of a
-    /// prompt on every poll cycle. Only fall back to the Keychain when cux
-    /// hasn't cached this org at all yet (e.g. a brand-new slot).
-    private func token(for account: Account, cached: UsageSnapshot?) -> String? {
-        if let data = try? Data(contentsOf: account.oauthURL),
-           let token = AccountDiscovery.accessToken(from: data) {
-            return token
-        }
-        guard account.isActive, cached == nil else { return nil }
-        return AccountDiscovery.keychainAccessToken()
+        TokenResolutionDiagnostics.write(
+            diagnostics, to: paths.root.appendingPathComponent("token-resolution.log"))
+        return result
     }
 }
