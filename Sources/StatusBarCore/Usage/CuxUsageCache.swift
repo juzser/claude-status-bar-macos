@@ -18,7 +18,14 @@ public enum CuxUsageCache {
     ///
     /// Newer cux versions key entries as "accountUuid|organizationUuid"
     /// rather than a bare organizationUuid; the trailing segment is what
-    /// callers join on, so compound keys are split before storing.
+    /// callers join on, so compound keys are split before storing. cux has
+    /// been observed leaving a stale entry under one key format sitting
+    /// alongside a fresh entry under the other for the same org — old
+    /// writes are never migrated or pruned when the key format changes.
+    /// `[String: Any]` bridged from JSONSerialization iterates in a
+    /// per-process, hash-seed-dependent order, so when two raw keys collide
+    /// on the same orgUuid, the more recent polled_at wins explicitly rather
+    /// than whichever entry the loop happens to visit last.
     public static func parse(_ data: Data) -> [String: UsageSnapshot] {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return [:]
@@ -30,6 +37,7 @@ public enum CuxUsageCache {
                   let snapshot = UsageSnapshot.parse(object: entry, fetchedAt: polledAt)
             else { continue }
             let orgUuid = key.split(separator: "|").last.map(String.init) ?? key
+            if let existing = result[orgUuid], existing.fetchedAt > snapshot.fetchedAt { continue }
             result[orgUuid] = snapshot
         }
         return result
