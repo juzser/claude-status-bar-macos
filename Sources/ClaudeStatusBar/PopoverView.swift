@@ -22,6 +22,7 @@ struct PopoverView: View {
                                 yellowColor: Color(hex: appState.settings.yellowColorHex) ?? .yellow,
                                 redColor: Color(hex: appState.settings.redColorHex) ?? .red,
                                 now: context.date,
+                                switchFailedAccountId: appState.switchFailedAccountId,
                                 onSwitch: { account in
                                     Task { await appState.switchAccount(account) }
                                 })

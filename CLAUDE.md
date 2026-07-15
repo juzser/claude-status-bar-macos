@@ -77,6 +77,11 @@ features (e.g. exit tests, custom traits) when writing tests here.
   `AccountDiscovery.keychainAccessToken()` — but only when `account.isActive`,
   since cux swaps just the active slot's token into the Keychain and applying
   the fallback to inactive accounts would misattribute that token to them.
+  That fallback is further gated on the account's org having no entry yet in
+  cux's own usage cache (`cached == nil`) — cux rewrites the shared Keychain
+  item on every `cux switch`, resetting macOS's "Always Allow" grant for it,
+  so an unconditional per-poll-cycle Keychain read re-prompts the user
+  constantly for no benefit once a cached snapshot already covers that org.
 
 ## Workflow
 

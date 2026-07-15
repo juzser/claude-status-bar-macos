@@ -10,6 +10,7 @@ struct AccountsSection: View {
     let yellowColor: Color
     let redColor: Color
     let now: Date
+    let switchFailedAccountId: String?
     let onSwitch: (Account) -> Void
 
     var body: some View {
@@ -25,7 +26,9 @@ struct AccountsSection: View {
                     AccountRow(account: account, state: states[account.id],
                                yellowAt: yellowAt, redAt: redAt, normalColor: normalColor,
                                yellowColor: yellowColor, redColor: redColor, now: now,
-                               showActiveBadge: accounts.count > 1, onSwitch: onSwitch)
+                               showActiveBadge: accounts.count > 1,
+                               switchFailed: switchFailedAccountId == account.id,
+                               onSwitch: onSwitch)
                 }
             }
         }
@@ -42,6 +45,7 @@ private struct AccountRow: View {
     let redColor: Color
     let now: Date
     let showActiveBadge: Bool
+    let switchFailed: Bool
     let onSwitch: (Account) -> Void
 
     var body: some View {
@@ -71,6 +75,10 @@ private struct AccountRow: View {
                         .font(.caption2).foregroundStyle(.green)
                         .help("Logged in")
                 }
+            }
+            if switchFailed {
+                Text("Switch failed — is cux installed and working?")
+                    .font(.caption2).foregroundStyle(.orange)
             }
             if let snapshot = state?.snapshot {
                 UsageBar(title: "5h", window: snapshot.fiveHour,
