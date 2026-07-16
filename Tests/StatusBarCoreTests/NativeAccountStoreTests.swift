@@ -17,6 +17,17 @@ import Testing
         #expect(state.accounts.isEmpty)
     }
 
+    @Test func loadReturnsEmptyStateForCorruptJSON() throws {
+        let file = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        try Data("not valid json {{{".utf8).write(to: file)
+
+        let state = NativeAccountStore.load(file: file)
+        #expect(state.activeId == nil)
+        #expect(state.accounts.isEmpty)
+    }
+
     @Test func saveThenLoadRoundTrips() throws {
         let file = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString + ".json")
