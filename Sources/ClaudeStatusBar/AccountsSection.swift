@@ -12,6 +12,7 @@ struct AccountsSection: View {
     let now: Date
     let switchFailedAccountId: String?
     let onSwitch: (Account) -> Void
+    let onAddAccount: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -31,6 +32,8 @@ struct AccountsSection: View {
                                onSwitch: onSwitch)
                 }
             }
+            Button("Add Account") { onAddAccount() }
+                .controlSize(.small)
         }
     }
 }
@@ -77,7 +80,7 @@ private struct AccountRow: View {
                 }
             }
             if switchFailed {
-                Text("Switch failed — is cux installed and working?")
+                Text("Switch failed — check native-switch.log")
                     .font(.caption2).foregroundStyle(.orange)
             }
             if let snapshot = state?.snapshot {

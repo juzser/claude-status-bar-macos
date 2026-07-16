@@ -25,7 +25,8 @@ struct PopoverView: View {
                                 switchFailedAccountId: appState.switchFailedAccountId,
                                 onSwitch: { account in
                                     Task { await appState.switchAccount(account) }
-                                })
+                                },
+                                onAddAccount: { Task { await appState.beginAddAccount() } })
                 Divider()
                 HStack {
                     Button("Refresh") {
