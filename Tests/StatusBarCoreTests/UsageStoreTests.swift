@@ -14,6 +14,16 @@ struct MockFetcher: UsageFetching {
     }
 }
 
+private struct FailingFetcher: UsageFetching {
+    func fetch(token: String) async throws -> UsageSnapshot {
+        throw UsageError.network
+    }
+}
+
+private func tempCacheFile() -> URL {
+    FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+}
+
 private func snap(_ pct: Double) -> UsageSnapshot {
     UsageSnapshot(fiveHour: UsageWindow(utilization: pct),
                   sevenDay: UsageWindow(utilization: pct),
@@ -176,5 +186,36 @@ private func makeStore(_ results: [String: Result<UsageSnapshot, UsageError>]) -
             #expect(UsageStore.shouldSkip(cycle: 7, failureCount: failures))
             #expect(UsageStore.shouldSkip(cycle: 9, failureCount: failures))
         }
+    }
+
+    @Test func needsReloginSurvivesACacheMissRefreshCycle() async {
+        let store = UsageStore(fetcher: FailingFetcher(), cacheFile: tempCacheFile())
+        store.seedNeedsRelogin(["native-0"])
+
+        let account = Account(id: "native-0", alias: nil, email: nil, slot: 0,
+                              isActive: true, oauthURL: URL(fileURLWithPath: "/dev/null"))
+        await store.refresh(accounts: [(account: account, token: nil, cached: nil)])
+
+        #expect(store.states["native-0"]?.needsRelogin == true)
+    }
+
+    @Test func freshAccountWithNoPriorStateDefaultsToNoRelogin() async {
+        let store = UsageStore(fetcher: FailingFetcher(), cacheFile: tempCacheFile())
+        let account = Account(id: "native-1", alias: nil, email: nil, slot: 1,
+                              isActive: false, oauthURL: URL(fileURLWithPath: "/dev/null"))
+        await store.refresh(accounts: [(account: account, token: nil, cached: nil)])
+
+        #expect(store.states["native-1"]?.needsRelogin == false)
+    }
+
+    @Test func seedNeedsReloginDoesNotOverwriteExistingState() {
+        let store = UsageStore(fetcher: FailingFetcher(), cacheFile: tempCacheFile())
+        store.seedNeedsRelogin(["native-0"])
+        #expect(store.states["native-0"]?.needsRelogin == true)
+
+        // A second seed call must not stomp state that's since moved on
+        // (e.g. a successful fetch already cleared needsRelogin).
+        store.seedNeedsRelogin(["native-0"])
+        #expect(store.states["native-0"]?.needsRelogin == true)
     }
 }
