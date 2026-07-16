@@ -95,6 +95,14 @@ public enum AccountDiscovery {
         return obj["organizationUuid"] as? String
     }
 
+    /// Extracts the email address from the oauthAccount block in ~/.claude.json.
+    public static func emailAddress(from data: Data) -> String? {
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        return obj["emailAddress"] as? String
+    }
+
     /// cux v0.2.11+ keeps the real bearer token only in the macOS Keychain
     /// (item labeled "Claude Code-credentials"), not in any slot's
     /// oauth.json. `reader` is injectable so tests can exercise the parsing

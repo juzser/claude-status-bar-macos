@@ -161,3 +161,16 @@ private func makeCuxFixture(in root: URL) throws {
         #expect(token == nil)
     }
 }
+
+@Suite struct EmailAddressTests {
+    @Test func emailAddressReadsFromFlatBlock() {
+        let json = #"{"emailAddress":"dev@example.com","organizationUuid":"org-1"}"#
+        let data = Data(json.utf8)
+        #expect(AccountDiscovery.emailAddress(from: data) == "dev@example.com")
+    }
+
+    @Test func emailAddressReturnsNilWhenMissing() {
+        let data = Data(#"{"organizationUuid":"org-1"}"#.utf8)
+        #expect(AccountDiscovery.emailAddress(from: data) == nil)
+    }
+}
