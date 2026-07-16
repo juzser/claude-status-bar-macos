@@ -12,6 +12,8 @@ struct AccountsSection: View {
     let now: Date
     let switchFailedAccountId: String?
     let onSwitch: (Account) -> Void
+    let onRelogin: (Account) -> Void
+    let onAddAccount: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -28,9 +30,11 @@ struct AccountsSection: View {
                                yellowColor: yellowColor, redColor: redColor, now: now,
                                showActiveBadge: accounts.count > 1,
                                switchFailed: switchFailedAccountId == account.id,
-                               onSwitch: onSwitch)
+                               onSwitch: onSwitch, onRelogin: onRelogin)
                 }
             }
+            Button("Add Account") { onAddAccount() }
+                .controlSize(.small)
         }
     }
 }
@@ -47,6 +51,7 @@ private struct AccountRow: View {
     let showActiveBadge: Bool
     let switchFailed: Bool
     let onSwitch: (Account) -> Void
+    let onRelogin: (Account) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -68,7 +73,7 @@ private struct AccountRow: View {
                 if state?.needsRelogin == true {
                     Label("re-login needed", systemImage: "exclamationmark.triangle")
                         .font(.caption2).foregroundStyle(.orange)
-                    Button("Log in") { TerminalLauncher.run(ReloginCommand.command(for: account)) }
+                    Button("Log in") { onRelogin(account) }
                         .controlSize(.small)
                 } else if state?.freshness == .fresh {
                     Image(systemName: "checkmark.circle.fill")
@@ -77,7 +82,7 @@ private struct AccountRow: View {
                 }
             }
             if switchFailed {
-                Text("Switch failed — is cux installed and working?")
+                Text("Switch failed — check native-switch.log")
                     .font(.caption2).foregroundStyle(.orange)
             }
             if let snapshot = state?.snapshot {

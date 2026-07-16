@@ -32,13 +32,15 @@ final class AppState {
     let paths: AppPaths
 
     private let cuxRefresher = CuxRefresher()
-    private let cuxAccountSwitcher = CuxAccountSwitcher()
+    private let nativeAccountSwitcher = NativeAccountSwitcher()
+    private let accountCapture: AccountCapture
     private let updateChecker = UpdateChecker()
     private var verbCycler = VerbCycler()
     private var watcher: DirectoryWatcher?
     private var pollTask: Task<Void, Never>?
     private var reaggregateTask: Task<Void, Never>?
     private var updateCheckTask: Task<Void, Never>?
+    private var captureTask: Task<Void, Never>?
     private var tickTask: Task<Void, Never>?
     private var tickInterval: Duration = .seconds(1)
     private var pollCycle = 0
@@ -55,6 +57,7 @@ final class AppState {
     init(paths: AppPaths = AppPaths(), settings: SettingsStore? = nil) {
         self.paths = paths
         self.settings = settings ?? SettingsStore()
+        self.accountCapture = AccountCapture(storeFile: paths.root.appendingPathComponent("native-accounts.json"))
         self.usageStore = UsageStore(fetcher: UsageClient(), cacheFile: paths.usageCacheFile)
         self.currentVerb = ThinkingVerbs.all[0]
         self.currentVerb = verbCycler.next(from: self.settings.messageStyle.thinking)
@@ -67,7 +70,7 @@ final class AppState {
         started = true
         try? paths.ensureDirs()
         usageStore.loadCache()
-        accounts = AccountDiscovery.discover(cuxRoot: cuxRoot, credentialsFile: credentialsFile)
+        accounts = resolveAccounts()
         reaggregate()
 
         watcher = DirectoryWatcher(url: paths.sessionsDir) { [weak self] in
@@ -91,6 +94,12 @@ final class AppState {
             while !Task.isCancelled {
                 await self?.checkForUpdates()
                 try? await Task.sleep(for: .seconds(Int(UpdateChecker.minInterval)))
+            }
+        }
+        captureTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(60))
+                await self?.recheckReloginAccounts()
             }
         }
     }
@@ -175,22 +184,63 @@ final class AppState {
     }
 
     func refreshUsageNow() async {
-        accounts = AccountDiscovery.discover(cuxRoot: cuxRoot, credentialsFile: credentialsFile)
+        accounts = resolveAccounts()
         // Slot accounts are tokenless, so their usage comes from cux's own
         // cache — ask cux to repoll it first or the mirror stays session-stale.
         await cuxRefresher.refreshIfNeeded(accounts: accounts)
         await usageStore.refresh(accounts: usageInputs(accounts))
     }
 
-    /// Switches the active cux slot, then re-discovers accounts and refreshes
-    /// usage so `isActive` and the usage bars reflect the new slot right away.
-    /// No-op for the plain credentials-file account (`slot == nil`), which
-    /// has nothing to switch to.
+    private func resolveAccounts() -> [Account] {
+        let nativeFile = paths.root.appendingPathComponent("native-accounts.json")
+        CuxStateImporter.importIfNeeded(cuxRoot: cuxRoot, nativeStateFile: nativeFile)
+        let nativeState = NativeAccountStore.load(file: nativeFile)
+        guard !nativeState.accounts.isEmpty else {
+            return AccountDiscovery.discover(cuxRoot: cuxRoot, credentialsFile: credentialsFile)
+        }
+        let flaggedIds = nativeState.accounts.filter(\.needsRelogin).map(\.id)
+        usageStore.seedNeedsRelogin(flaggedIds)
+        return NativeAccountStore.toAccounts(nativeState)
+    }
+
+    /// Switches the active account via NativeAccountSwitcher, then
+    /// re-resolves accounts and refreshes usage so isActive/usage bars
+    /// reflect the switch immediately. No-op for the plain default account
+    /// (slot == nil) — it has nothing to switch to, and the UI never shows
+    /// a Switch button for it (see AccountsSection.swift).
     func switchAccount(_ account: Account) async {
-        guard let slot = account.slot else { return }
-        let succeeded = await cuxAccountSwitcher.switchTo(slot: slot)
+        guard account.slot != nil else { return }
+        let succeeded = await nativeAccountSwitcher.switchTo(account: account)
         switchFailedAccountId = succeeded ? nil : account.id
         await refreshUsageNow()
+    }
+
+    /// Snapshots the currently-live credentials as the pre-login baseline,
+    /// then launches `claude /login` in Terminal. The resulting new login
+    /// is picked up by `recheckReloginAccounts()` (popover-open + the
+    /// ~60s captureTask ticker started in `start()`).
+    func beginAddAccount() async {
+        await accountCapture.beginCapture()
+        TerminalLauncher.run("claude /login")
+    }
+
+    /// Re-authenticates a flagged existing account. Switches it live first
+    /// (via `switchAccount`, which no-ops for the plain slot == nil account —
+    /// same guard the Switch button relies on) so `claude /login` renews the
+    /// *target* account's credentials rather than whatever happens to be
+    /// currently active, then snapshots that just-switched state as the
+    /// capture baseline before launching the login.
+    ///
+    /// Baseline capture deliberately happens after the switch, not before:
+    /// capturing the pre-switch credentials as the baseline would make the
+    /// switch itself look like a completed login the instant the live item
+    /// changes — well before the user ever reaches the browser hand-off —
+    /// so the ~60s captureTask ticker or a popover reopen could clear
+    /// `needsRelogin` against credentials that were never actually renewed.
+    func beginRelogin(_ account: Account) async {
+        await switchAccount(account)
+        await accountCapture.beginCapture()
+        TerminalLauncher.run("claude /login")
     }
 
     /// Re-fetches only accounts flagged needs-relogin. Runs when the popover
@@ -198,6 +248,9 @@ final class AppState {
     /// (every 8th cycle at 3+ failures) would otherwise keep the stale badge
     /// up for the better part of an hour.
     func recheckReloginAccounts() async {
+        if case .captured = await accountCapture.checkForNewLogin() {
+            await refreshUsageNow()
+        }
         let flagged = accounts.filter { usageStore.states[$0.id]?.needsRelogin == true }
         guard !flagged.isEmpty else { return }
         await usageStore.refresh(accounts: usageInputs(flagged))
@@ -215,7 +268,7 @@ final class AppState {
     }
 
     private func pollOnce() async {
-        accounts = AccountDiscovery.discover(cuxRoot: cuxRoot, credentialsFile: credentialsFile)
+        accounts = resolveAccounts()
         let cycle = pollCycle
         pollCycle += 1
         let due = accounts.filter { account in

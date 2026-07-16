@@ -93,9 +93,12 @@ public final class UsageStore {
                     state = AccountUsageState(snapshot: cached,
                                               freshness: fresh ? .fresh : .stale)
                 } else if account.slot != nil {
-                    // cux owns auth for slot accounts; a missing cache entry
-                    // means "no data yet", never "logged out".
-                    state.needsRelogin = false
+                    // A slot-having account with no cache hit and no prior
+                    // state defaults to needsRelogin == false (via
+                    // AccountUsageState()'s own default) — but if this ID
+                    // was pre-seeded via seedNeedsRelogin (a migrated
+                    // native account with no vault backup), that flag
+                    // must survive this cycle, not be reset here.
                 } else {
                     state.needsRelogin = true
                 }
@@ -103,6 +106,16 @@ public final class UsageStore {
             states[id] = state
         }
         saveCache()
+    }
+
+    /// Marks the given account ids as needing relogin, without disturbing
+    /// any id that already has state (e.g. from a completed fetch). Used by
+    /// `AppState.resolveAccounts()` right after loading a migrated native
+    /// account whose credential vault backup couldn't be read.
+    public func seedNeedsRelogin(_ ids: [String]) {
+        for id in ids where states[id] == nil {
+            states[id] = AccountUsageState(needsRelogin: true)
+        }
     }
 
     public func loadCache() {

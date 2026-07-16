@@ -79,14 +79,23 @@ with multi-account support.
 
 5. **Multi-account usage (optional)**
 
-   Install [cux](https://cux.inulute.com) and add your accounts — the app
-   reads account slots straight from `~/.cux` (falling back to the single
-   account in `~/.claude/.credentials.json`). Each cux slot shows up as its
-   own row in the popover with 5h/7d usage bars; click **Switch** to make a
-   different slot active. If a row shows **re-login needed**, click
-   **Log in**: for a cux slot this runs `cux switch <slot> && cux /login`,
-   for the bare `~/.claude` account it runs `claude /login` — either opens a
-   terminal window to complete the OAuth flow.
+   The app manages multiple accounts natively — switching swaps the live
+   `Claude Code-credentials` Keychain item and `~/.claude.json`'s
+   `oauthAccount` block itself, with a per-account Keychain-backed vault for
+   the credentials of every account that isn't currently active. If you
+   already used [cux](https://cux.inulute.com), its accounts are imported
+   into this native store automatically the first time the app runs — no
+   need to keep cux installed afterward. To add another account, click **Add
+   Account** in the popover, complete the `claude /login` flow it opens in a
+   terminal window, and the newly-logged-in account is captured and added as
+   its own row.
+
+   Each account shows up as its own row in the popover with 5h/7d usage
+   bars; click **Switch** to make a different account active in-process.
+   If a row shows **re-login needed**, click **Log in** — this switches that
+   account live first (so the credentials `claude /login` renews belong to
+   the right account, not whatever was active before), then opens a terminal
+   window to complete the OAuth flow.
 
 6. **Verify it works**
 

@@ -3,8 +3,7 @@ import Foundation
 import Darwin
 #endif
 
-/// Shared subprocess invocation behind `CuxAccountSwitcher.invoke` and
-/// `CuxRefresher.invoke`.
+/// Shared subprocess invocation behind `CuxRefresher.invoke`.
 ///
 /// cux is a Node script (`#!/usr/bin/env node`), typically installed via a
 /// version manager like nvm, whose PATH setup is sourced only by
