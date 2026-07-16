@@ -23,11 +23,38 @@ public enum LiveCredentialWriter {
     }
 
     public static func defaultWrite(data: Data, trustedPaths: [String], service: String) -> Bool {
-        let deleteQuery: [String: Any] = [
+        performWrite(data: data, trustedPaths: trustedPaths, service: service, account: NSUserName())
+    }
+
+    /// Queries on `kSecAttrService`+`kSecAttrAccount` (not just
+    /// `kSecAttrLabel`, as the previous implementation did) so the item
+    /// matches what `claude`/`cux` themselves key on when looking it up.
+    /// `account` defaults to the current macOS username via `defaultWrite`:
+    /// forensic inspection of a real `claude`-written item (a single
+    /// narrowly-scoped `security find-generic-password -s "Claude
+    /// Code-credentials"` lookup) showed `acct` set to the OS username, not a
+    /// fixed literal such as `"claude"`.
+    ///
+    /// Uses `SecItemUpdate`-or-add rather than delete-then-add: a delete
+    /// followed by a failed add would leave the live item entirely missing,
+    /// which is worse than anything the old `cux switch` path could do since
+    /// it never touched this item directly. Falls back to `add` only when
+    /// `update` reports the item doesn't exist yet; any other update failure
+    /// is reported as failure without touching the existing item.
+    static func performWrite(
+        data: Data,
+        trustedPaths: [String],
+        service: String,
+        account: String,
+        update: (CFDictionary, CFDictionary) -> OSStatus = SecItemUpdate,
+        add: (CFDictionary, UnsafeMutablePointer<CFTypeRef?>?) -> OSStatus = SecItemAdd
+    ) -> Bool {
+        let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrLabel as String: service,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
         ]
-        SecItemDelete(deleteQuery as CFDictionary)
 
         let trustedApps: [SecTrustedApplication] = trustedPaths.compactMap { path in
             var app: SecTrustedApplication?
@@ -37,16 +64,27 @@ public enum LiveCredentialWriter {
         var access: SecAccess?
         SecAccessCreate(service as CFString, trustedApps as CFArray, &access)
 
-        var attributes: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrLabel as String: service,
+        var newAttributes: [String: Any] = [
             kSecValueData as String: data,
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
         ]
         if let access {
-            attributes[kSecAttrAccess as String] = access
+            newAttributes[kSecAttrAccess as String] = access
         }
-        return SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess
+
+        let updateStatus = update(query as CFDictionary, newAttributes as CFDictionary)
+        if updateStatus == errSecSuccess {
+            return true
+        }
+        guard updateStatus == errSecItemNotFound else {
+            return false
+        }
+
+        var addAttributes = query
+        for (key, value) in newAttributes {
+            addAttributes[key] = value
+        }
+        return add(addAttributes as CFDictionary, nil) == errSecSuccess
     }
 
     /// Non-nil entries only — `claudePath` is nil when `claude`'s binary

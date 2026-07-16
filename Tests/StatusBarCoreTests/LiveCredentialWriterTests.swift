@@ -1,4 +1,5 @@
 import Foundation
+import Security
 import Testing
 @testable import StatusBarCore
 
@@ -54,5 +55,89 @@ import Testing
         let path = LiveCredentialWriter.resolvedClaudePath(candidates: ["/usr/local/bin/claude"],
                                                            isExecutable: { _ in false })
         #expect(path == nil)
+    }
+
+    // MARK: - performWrite
+
+    @Test func performWriteUpdatesInPlaceWhenItemExists() {
+        var capturedQuery: [String: Any]?
+        var capturedUpdateAttributes: [String: Any]?
+        var addCalled = false
+
+        let ok = LiveCredentialWriter.performWrite(
+            data: Data("token".utf8),
+            trustedPaths: [],
+            service: LiveCredentialWriter.service,
+            account: "ser",
+            update: { query, attributes in
+                capturedQuery = query as? [String: Any]
+                capturedUpdateAttributes = attributes as? [String: Any]
+                return errSecSuccess
+            },
+            add: { _, _ in
+                addCalled = true
+                return errSecSuccess
+            }
+        )
+
+        #expect(ok)
+        #expect(addCalled == false)
+        #expect(capturedQuery?[kSecAttrService as String] as? String == LiveCredentialWriter.service)
+        #expect(capturedQuery?[kSecAttrAccount as String] as? String == "ser")
+        #expect(capturedQuery?[kSecAttrLabel as String] as? String == LiveCredentialWriter.service)
+        #expect(capturedUpdateAttributes?[kSecValueData as String] as? Data == Data("token".utf8))
+    }
+
+    @Test func performWriteFallsBackToAddWhenItemMissing() {
+        var capturedAddAttributes: [String: Any]?
+
+        let ok = LiveCredentialWriter.performWrite(
+            data: Data("token".utf8),
+            trustedPaths: [],
+            service: LiveCredentialWriter.service,
+            account: "ser",
+            update: { _, _ in errSecItemNotFound },
+            add: { attributes, _ in
+                capturedAddAttributes = attributes as? [String: Any]
+                return errSecSuccess
+            }
+        )
+
+        #expect(ok)
+        #expect(capturedAddAttributes?[kSecAttrService as String] as? String == LiveCredentialWriter.service)
+        #expect(capturedAddAttributes?[kSecAttrAccount as String] as? String == "ser")
+        #expect(capturedAddAttributes?[kSecValueData as String] as? Data == Data("token".utf8))
+    }
+
+    @Test func performWriteFailsWithoutFallingBackOnOtherUpdateErrors() {
+        var addCalled = false
+
+        let ok = LiveCredentialWriter.performWrite(
+            data: Data("token".utf8),
+            trustedPaths: [],
+            service: LiveCredentialWriter.service,
+            account: "ser",
+            update: { _, _ in errSecAuthFailed },
+            add: { _, _ in
+                addCalled = true
+                return errSecSuccess
+            }
+        )
+
+        #expect(ok == false)
+        #expect(addCalled == false)
+    }
+
+    @Test func performWriteReturnsFalseWhenAddFallbackFails() {
+        let ok = LiveCredentialWriter.performWrite(
+            data: Data("token".utf8),
+            trustedPaths: [],
+            service: LiveCredentialWriter.service,
+            account: "ser",
+            update: { _, _ in errSecItemNotFound },
+            add: { _, _ in errSecDuplicateItem }
+        )
+
+        #expect(ok == false)
     }
 }
