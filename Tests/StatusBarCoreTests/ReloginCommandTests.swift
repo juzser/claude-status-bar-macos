@@ -3,15 +3,13 @@ import Testing
 @testable import StatusBarCore
 
 @Suite struct ReloginCommandTests {
-    @Test func cuxAccountSwitchesSlotThenLogsIn() {
-        let account = Account(id: "slot-2", alias: "work", email: "a@b.com", slot: 2,
-                              isActive: false, oauthURL: URL(fileURLWithPath: "/tmp/oauth.json"))
-        #expect(ReloginCommand.command(for: account) == "cux switch 2 && cux /login")
-    }
+    @Test func returnsPlainLoginCommandForAnyAccount() {
+        let slotted = Account(id: "native-0", alias: nil, email: "a@example.com", slot: 0,
+                              isActive: true, oauthURL: URL(fileURLWithPath: "/dev/null"))
+        #expect(ReloginCommand.command(for: slotted) == "claude /login")
 
-    @Test func defaultAccountLogsInViaClaude() {
-        let account = Account(id: "default", alias: nil, email: nil, slot: nil,
-                              isActive: true, oauthURL: URL(fileURLWithPath: "/tmp/credentials.json"))
-        #expect(ReloginCommand.command(for: account) == "claude /login")
+        let plain = Account(id: "default", alias: nil, email: nil, slot: nil,
+                            isActive: true, oauthURL: URL(fileURLWithPath: "/dev/null"))
+        #expect(ReloginCommand.command(for: plain) == "claude /login")
     }
 }
