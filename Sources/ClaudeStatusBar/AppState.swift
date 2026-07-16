@@ -224,6 +224,25 @@ final class AppState {
         TerminalLauncher.run("claude /login")
     }
 
+    /// Re-authenticates a flagged existing account. Switches it live first
+    /// (via `switchAccount`, which no-ops for the plain slot == nil account —
+    /// same guard the Switch button relies on) so `claude /login` renews the
+    /// *target* account's credentials rather than whatever happens to be
+    /// currently active, then snapshots that just-switched state as the
+    /// capture baseline before launching the login.
+    ///
+    /// Baseline capture deliberately happens after the switch, not before:
+    /// capturing the pre-switch credentials as the baseline would make the
+    /// switch itself look like a completed login the instant the live item
+    /// changes — well before the user ever reaches the browser hand-off —
+    /// so the ~60s captureTask ticker or a popover reopen could clear
+    /// `needsRelogin` against credentials that were never actually renewed.
+    func beginRelogin(_ account: Account) async {
+        await switchAccount(account)
+        await accountCapture.beginCapture()
+        TerminalLauncher.run("claude /login")
+    }
+
     /// Re-fetches only accounts flagged needs-relogin. Runs when the popover
     /// opens: after the user logs back in, the poll loop's failure backoff
     /// (every 8th cycle at 3+ failures) would otherwise keep the stale badge

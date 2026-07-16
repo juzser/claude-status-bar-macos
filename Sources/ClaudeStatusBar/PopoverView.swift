@@ -26,6 +26,9 @@ struct PopoverView: View {
                                 onSwitch: { account in
                                     Task { await appState.switchAccount(account) }
                                 },
+                                onRelogin: { account in
+                                    Task { await appState.beginRelogin(account) }
+                                },
                                 onAddAccount: { Task { await appState.beginAddAccount() } })
                 Divider()
                 HStack {
