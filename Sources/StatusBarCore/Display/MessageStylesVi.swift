@@ -66,7 +66,7 @@ enum MessageStylesVi {
         thinking: [
             "Não đang load", "Đơ 5 giây", "Não đang toang nhẹ", "Chưa nghĩ ra gì",
             "Khum biết nghĩ gì", "Nạp thêm IQ", "Não cá vàng", "Bấm nút restart não",
-            "Có ai không đó", "Xin dừng suy nghĩ", "Đứng hình chấm cơm", "Flex cái đầu rỗng",
+            "Có ai không đó", "Não trắng xoá rồi", "Đứng hình chấm cơm", "Flex cái đầu rỗng",
         ],
         tool: [
             "Editing": "Gõ chữ loạn xạ", "Running": "Chạy đại cho rồi", "Reading": "Đọc mà không hiểu",
@@ -126,7 +126,7 @@ enum MessageStylesVi {
         id: "office", name: "Office",
         thinking: [
             "Họp sync nhanh", "Dời qua offline", "Canh giờ deadline", "Làm deck báo cáo",
-            "Gộp vào thread", "Đá bóng trách nhiệm", "Xin thêm deadline", "Note lại ý chính",
+            "Gộp vào thread", "Đá bóng trách nhiệm", "Xin gia hạn deadline", "Note lại ý chính",
             "Đợi sếp duyệt", "Trả lời email", "Block lịch làm việc", "Ping hỏi tiến độ",
         ],
         tool: [
@@ -140,12 +140,12 @@ enum MessageStylesVi {
     static let design = MessageStyle(
         id: "design", name: "Design",
         thinking: [
-            "Dò mood board", "Chỉnh từng pixel", "Đặt tên layer", "Dựng component mới",
-            "Canh lại khoảng cách", "Chọn font phù hợp", "Nhân đôi frame", "Auto layout lại",
+            "Ngắm mood board", "Chỉnh từng pixel", "Đặt tên layer", "Dựng component mới",
+            "Canh lại khoảng cách", "Chọn font phù hợp", "Nhân đôi frame", "Chỉnh Auto Layout",
             "Phối màu palette", "Mài prototype mượt", "Gắn tên variant", "Săm soi bố cục",
         ],
         tool: [
-            "Editing": "Bo góc cho tròn", "Running": "Xuất file thiết kế",
+            "Editing": "Bo góc cho đều", "Running": "Xuất file thiết kế",
             "Reading": "Đọc lại spec", "Searching": "Tìm icon phù hợp",
             "Browsing": "Lướt Dribbble ngắm nghía", "Delegating": "Bàn giao cho dev",
             "Working": "Chỉnh sửa mockup",
