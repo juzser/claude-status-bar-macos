@@ -152,14 +152,14 @@ private func usage(five: Double, seven: Double) -> AccountUsageState {
 
     @Test func missingLabelThemedAsWorking() {
         let m = model(display: session(.tool, busyFor: 45), usage: nil, style: .full,
-                      messageStyle: MessageStyles.style(id: "scifi"))
-        #expect(m.activityText == "Running ship diagnostics · 45s")
+                      messageStyle: MessageStyles.style(id: "gardening"))
+        #expect(m.activityText == "Tending the garden · 45s")
     }
 
     @Test func waitingUsesStylePhrase() {
         let m = model(display: session(.waiting, busyFor: 45), usage: nil, style: .full,
                       messageStyle: MessageStyles.style(id: "cooking"))
-        #expect(m.activityText == "Order up, chef")
+        #expect(m.activityText == "Stomach's officially growling")
     }
 
     @Test func classicRendersByteIdenticalToV1() {
