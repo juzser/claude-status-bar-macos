@@ -13,9 +13,17 @@ import Foundation
 /// any "Always Allow" grant already given for it — calling this every poll
 /// cycle would trade one re-prompt problem for a smaller but still
 /// recurring one.
+///
+/// Running once per launch still resets that grant once per launch, so
+/// frequent relaunches reproduce the same re-prompt at a lower frequency.
+/// `isTrusted` probes (non-interactively, via
+/// `LiveCredentialWriter.isAlreadyTrusted`) whether the ACL already covers
+/// this app before rewriting it — when it does, `read`/`write` are skipped
+/// entirely and the existing "Always Allow" grant survives untouched.
 public enum LiveCredentialSelfHeal {
     public static func run(
         diagnosticLog: URL? = nil,
+        isTrusted: () -> Bool = { LiveCredentialWriter.isAlreadyTrusted() },
         read: () -> Data? = { LiveCredentialWriter.read() },
         write: (Data, [String]) -> Bool = { data, paths in LiveCredentialWriter.write(data, trustedPaths: paths) },
         trustedPaths: () -> [String] = {
@@ -23,6 +31,10 @@ public enum LiveCredentialSelfHeal {
                                               claudePath: LiveCredentialWriter.resolvedClaudePath())
         }
     ) -> Bool {
+        if isTrusted() {
+            writeDiagnostic("self-heal ACL skipped: already trusted", to: diagnosticLog)
+            return true
+        }
         guard let data = read() else {
             writeDiagnostic("self-heal ACL skipped: no live credentials found", to: diagnosticLog)
             return false
