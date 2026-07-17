@@ -30,7 +30,8 @@ public struct NativeAccountState: Codable, Sendable, Equatable {
 }
 
 /// Persists the app's own account list at `native-accounts.json` under
-/// `AppPaths().root`, independent of cux's `~/.cux/state.json`.
+/// `AppPaths().root` — this app's sole on-disk record of which accounts
+/// exist and which one is active.
 public enum NativeAccountStore {
     public static func exists(file: URL) -> Bool {
         FileManager.default.fileExists(atPath: file.path)

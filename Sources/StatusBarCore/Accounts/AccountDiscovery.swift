@@ -8,8 +8,12 @@ public struct Account: Equatable, Sendable, Identifiable {
     public let slot: Int?
     public let isActive: Bool
     public let oauthURL: URL
-    /// Join key into cux's usage cache; nil for credentials-file accounts
-    /// and older cux versions that don't write it into oauth.json.
+    /// Org identifier read from an account's oauth.json (see
+    /// `organizationUuid(from:)`), when known. Serves as the account-identity
+    /// join key elsewhere — e.g. `AccountCapture` uses it to match a freshly
+    /// captured login to an already-tracked native account. Nil for the
+    /// plain credentials-file account `discover(credentialsFile:)` returns,
+    /// which has no oauth.json to read one from.
     public let organizationUuid: String?
 
     public init(id: String, alias: String?, email: String?, slot: Int?,
@@ -25,53 +29,17 @@ public struct Account: Equatable, Sendable, Identifiable {
 }
 
 public enum AccountDiscovery {
-    private struct CuxState: Decodable {
-        struct CuxAccount: Decodable {
-            let slot: Int
-            let email: String
-            let alias: String?
+    /// Falls back to a single default account backed directly by the
+    /// `claude`-managed credentials file when no native accounts have been
+    /// captured yet (see `AppState.resolveAccounts()`, which prefers
+    /// `NativeAccountStore` and only calls this as the pre-native-account
+    /// fallback).
+    public static func discover(credentialsFile: URL) -> [Account] {
+        guard FileManager.default.fileExists(atPath: credentialsFile.path) else {
+            return []
         }
-        let activeSlot: Int?
-        let accounts: [String: CuxAccount]
-    }
-
-    public static func discover(cuxRoot: URL, credentialsFile: URL) -> [Account] {
-        if let accounts = discoverCux(root: cuxRoot), !accounts.isEmpty {
-            return accounts
-        }
-        if FileManager.default.fileExists(atPath: credentialsFile.path) {
-            return [Account(id: "default", alias: nil, email: nil, slot: nil,
-                            isActive: true, oauthURL: credentialsFile)]
-        }
-        return []
-    }
-
-    /// Reads only cux metadata (slots, emails, aliases) — never token contents.
-    private static func discoverCux(root: URL) -> [Account]? {
-        let fm = FileManager.default
-        guard let data = try? Data(contentsOf: root.appendingPathComponent("state.json")),
-              let state = try? JSONDecoder().decode(CuxState.self, from: data) else {
-            return nil
-        }
-        let accountsDir = root.appendingPathComponent("accounts", isDirectory: true)
-        let entries = (try? fm.contentsOfDirectory(atPath: accountsDir.path)) ?? []
-        return state.accounts.values
-            .sorted { $0.slot < $1.slot }
-            .compactMap { acct in
-                let padded = String(format: "%02d-%@", acct.slot, acct.email)
-                let plain = "\(acct.slot)-\(acct.email)"
-                guard let dir = entries.first(where: { $0 == padded || $0 == plain }) else {
-                    return nil
-                }
-                let oauth = accountsDir.appendingPathComponent(dir, isDirectory: true)
-                    .appendingPathComponent("oauth.json")
-                guard fm.fileExists(atPath: oauth.path) else { return nil }
-                let orgUuid = (try? Data(contentsOf: oauth)).flatMap(organizationUuid(from:))
-                return Account(id: "slot-\(acct.slot)", alias: acct.alias,
-                               email: acct.email, slot: acct.slot,
-                               isActive: acct.slot == state.activeSlot,
-                               oauthURL: oauth, organizationUuid: orgUuid)
-            }
+        return [Account(id: "default", alias: nil, email: nil, slot: nil,
+                        isActive: true, oauthURL: credentialsFile)]
     }
 
     /// Extracts the bearer token from an oauth/credentials JSON file.
@@ -87,7 +55,8 @@ public enum AccountDiscovery {
         return obj["accessToken"] as? String
     }
 
-    /// Non-secret profile metadata from a cux oauth.json.
+    /// Non-secret profile metadata from an oauth/credentials JSON file: the
+    /// org uuid, when present.
     public static func organizationUuid(from data: Data) -> String? {
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
@@ -103,10 +72,13 @@ public enum AccountDiscovery {
         return obj["emailAddress"] as? String
     }
 
-    /// cux v0.2.11+ keeps the real bearer token only in the macOS Keychain
-    /// (item labeled "Claude Code-credentials"), not in any slot's
-    /// oauth.json. `reader` is injectable so tests can exercise the parsing
-    /// path without touching the real Keychain.
+    /// Reads the live "Claude Code-credentials" Keychain item — the same
+    /// item `claude` and `NativeAccountSwitcher` write to for the currently
+    /// active account. Native (slot) accounts don't carry a token in their
+    /// own oauth.json (`NativeAccountStore.toAccount` points `oauthURL` at
+    /// `/dev/null`), so this is their fallback source for one. `reader` is
+    /// injectable so tests can exercise the parsing path without touching
+    /// the real Keychain.
     public static func keychainAccessToken(
         service: String = "Claude Code-credentials",
         reader: (String) -> Data? = defaultKeychainReader

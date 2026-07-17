@@ -3,18 +3,20 @@ import Foundation
 import Darwin
 #endif
 
-/// Shared subprocess invocation behind `CuxRefresher.invoke`.
+/// Runs a binary through an interactive shell so it resolves PATH the same
+/// way the user's own terminal would.
 ///
-/// cux is a Node script (`#!/usr/bin/env node`), typically installed via a
-/// version manager like nvm, whose PATH setup is sourced only by
-/// interactive shell startup files (~/.zshrc). A GUI app launched by
-/// LaunchServices inherits only the bare `/usr/bin:/bin:/usr/sbin:/sbin`
-/// PATH, under which the shebang's `env node` step can't find `node`.
-/// Routing the call through an interactive zsh (`-ilc`) makes the shell
-/// resolve `node` itself, exactly as it would in the user's own terminal —
-/// the same assumption TerminalLauncher already makes about the user's
-/// shell being zsh.
-enum CuxShellInvoker {
+/// A GUI app launched by LaunchServices inherits only the bare
+/// `/usr/bin:/bin:/usr/sbin:/sbin` PATH, not whatever an interactive shell
+/// session sets up via `~/.zshrc` — version managers (nvm for `node`,
+/// native installers that put `claude` under `~/.local/bin`) are typically
+/// invisible under that bare PATH as a result. A Node script
+/// (`#!/usr/bin/env node`) is one example: its shebang can't find `node`
+/// without an interactive shell's PATH. Routing the call through an
+/// interactive zsh (`-ilc`) makes the shell resolve the binary itself,
+/// exactly as it would in the user's own terminal — the same assumption
+/// TerminalLauncher already makes about the user's shell being zsh.
+public enum InteractiveShellRunner {
     /// Runs `<binary> <arguments>` inside an interactive zsh. Returns true
     /// only on exit status 0. Terminates the process if it outlives
     /// `timeout` (terminate() still fires the termination handler, so the
@@ -104,6 +106,74 @@ enum CuxShellInvoker {
         }
     }
 
+    /// Like `invoke`, but returns captured stdout on exit status 0 instead of
+    /// collapsing to a `Bool`. Returns nil on nonzero exit, launch failure,
+    /// or empty output.
+    ///
+    /// Apple Terminal's `/etc/zshrc` session-restore integration fires
+    /// whenever `-ilc` runs without `TERM_SESSION_ID` set — true for any
+    /// GUI-app-spawned subprocess — printing a "Restored session: ..."
+    /// banner line plus an OSC7 escape sequence directly adjacent to (not
+    /// newline-separated from) the real command's own output. Stripping
+    /// only leading/trailing whitespace leaves that noise embedded in the
+    /// result, so callers resolving a path this way (`ClaudeBinaryLocator`)
+    /// got back a corrupted, unusable string. `lastCleanLine` strips escape
+    /// sequences first, then takes the last non-empty line, since the real
+    /// output is always what the command itself printed last.
+    public static func captureOutput(binary: String, arguments: [String], timeout: TimeInterval,
+                              environment: [String: String]? = nil,
+                              diagnosticLog: URL? = nil) async -> String? {
+        let startedAt = Date()
+        return await withCheckedContinuation { continuation in
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+            process.arguments = ["-ilc", command(binary: binary, arguments: arguments)]
+            if let environment {
+                process.environment = environment
+            }
+            let stdoutPipe = Pipe()
+            let stderrPipe = Pipe()
+            process.standardOutput = stdoutPipe
+            process.standardError = stderrPipe
+            process.terminationHandler = { finished in
+                let stdout = String(data: stdoutPipe.fileHandleForReading.readDataToEndOfFile(),
+                                    encoding: .utf8) ?? ""
+                let stderr = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(),
+                                    encoding: .utf8) ?? ""
+                if let diagnosticLog {
+                    writeDiagnostic(to: diagnosticLog, binary: binary, arguments: arguments,
+                                    exitCode: finished.terminationStatus,
+                                    terminationReason: finished.terminationReason,
+                                    stdout: stdout, stderr: stderr,
+                                    duration: Date().timeIntervalSince(startedAt))
+                }
+                let trimmed = stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+                let succeeded = finished.terminationStatus == 0 && !trimmed.isEmpty
+                continuation.resume(returning: succeeded ? lastCleanLine(of: trimmed) : nil)
+            }
+            do {
+                try process.run()
+            } catch {
+                process.terminationHandler = nil
+                if let diagnosticLog {
+                    writeDiagnostic(to: diagnosticLog, binary: binary, arguments: arguments,
+                                    exitCode: -1, terminationReason: .exit, stdout: "",
+                                    stderr: "process.run() failed: \(error)",
+                                    duration: Date().timeIntervalSince(startedAt))
+                }
+                continuation.resume(returning: nil)
+                return
+            }
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
+                guard process.isRunning else { return }
+                for pid in descendantPIDs(of: process.processIdentifier) {
+                    kill(pid, SIGTERM)
+                }
+                process.terminate()
+            }
+        }
+    }
+
     /// Snapshots the system-wide pid/ppid table via `ps` and returns every
     /// transitive descendant of `pid`, deepest-first order not guaranteed
     /// (callers signal them all, so order doesn't matter).
@@ -160,6 +230,23 @@ enum CuxShellInvoker {
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
                                                   withIntermediateDirectories: true)
         try? text.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    private static let escapeSequencePattern = try! NSRegularExpression(
+        pattern: "\u{1B}\\][^\u{07}\u{1B}]*(\u{07}|\u{1B}\\\\)|\u{1B}\\[[0-9;]*[A-Za-z]"
+    )
+
+    /// Strips OSC (`ESC ] ... BEL` / `ESC ] ... ESC \`) and CSI (`ESC [ ...`)
+    /// escape sequences, then returns the last non-empty line — the shell
+    /// startup noise these sequences and banner text ride in on always
+    /// precedes the command's own output.
+    private static func lastCleanLine(of output: String) -> String? {
+        let range = NSRange(output.startIndex..., in: output)
+        let cleaned = escapeSequencePattern.stringByReplacingMatches(in: output, range: range, withTemplate: "")
+        let lines = cleaned.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        return lines.last
     }
 
     private static func command(binary: String, arguments: [String]) -> String {

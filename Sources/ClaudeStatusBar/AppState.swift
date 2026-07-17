@@ -31,7 +31,6 @@ final class AppState {
     let usageStore: UsageStore
     let paths: AppPaths
 
-    private let cuxRefresher = CuxRefresher()
     private let nativeAccountSwitcher = NativeAccountSwitcher()
     private let accountCapture: AccountCapture
     private let updateChecker = UpdateChecker()
@@ -45,9 +44,11 @@ final class AppState {
     private var tickInterval: Duration = .seconds(1)
     private var pollCycle = 0
     private var started = false
+    /// Stored (not fire-and-forget) so `usageInputs(_:)` can await it before
+    /// the first real Keychain read of a launch — see its assignment in
+    /// `start()` for why that ordering matters.
+    private var selfHealTask: Task<Bool, Never>?
 
-    private let cuxRoot = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".cux", isDirectory: true)
     private let credentialsFile = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".claude/.credentials.json")
 
@@ -74,7 +75,20 @@ final class AppState {
         // Re-assert the live credentials' Keychain ACL once per launch so an
         // account that has never completed a successful switch (the only
         // path that used to fix this) still stops re-prompting for access.
-        _ = LiveCredentialSelfHeal.run(diagnosticLog: paths.root.appendingPathComponent("native-switch.log"))
+        // Backgrounded: resolving claude's binary may shell out (see
+        // ClaudeBinaryLocator), and start() itself must stay synchronous.
+        //
+        // Stored rather than fire-and-forget: AccountDiscovery's Keychain
+        // read for the active account (unlike this self-heal probe) doesn't
+        // set kSecUseAuthenticationUIFail, so it can trigger a blocking
+        // native Keychain confirmation dialog if the ACL isn't trusted yet.
+        // An un-awaited Task here raced against the first refresh with no
+        // ordering guarantee — usageInputs(_:) awaits selfHealTask so the
+        // fast, non-interactive ACL re-assertion always gets first crack at
+        // fixing trust before that interactive-capable read can fire.
+        selfHealTask = Task {
+            await LiveCredentialSelfHeal.run(diagnosticLog: paths.root.appendingPathComponent("native-switch.log"))
+        }
         reaggregate()
 
         watcher = DirectoryWatcher(url: paths.sessionsDir) { [weak self] in
@@ -189,18 +203,14 @@ final class AppState {
 
     func refreshUsageNow() async {
         accounts = resolveAccounts()
-        // Slot accounts are tokenless, so their usage comes from cux's own
-        // cache — ask cux to repoll it first or the mirror stays session-stale.
-        await cuxRefresher.refreshIfNeeded(accounts: accounts)
-        await usageStore.refresh(accounts: usageInputs(accounts))
+        await usageStore.refresh(accounts: await usageInputs(accounts))
     }
 
     private func resolveAccounts() -> [Account] {
         let nativeFile = paths.root.appendingPathComponent("native-accounts.json")
-        CuxStateImporter.importIfNeeded(cuxRoot: cuxRoot, nativeStateFile: nativeFile)
         let nativeState = NativeAccountStore.load(file: nativeFile)
         guard !nativeState.accounts.isEmpty else {
-            return AccountDiscovery.discover(cuxRoot: cuxRoot, credentialsFile: credentialsFile)
+            return AccountDiscovery.discover(credentialsFile: credentialsFile)
         }
         let flaggedIds = nativeState.accounts.filter(\.needsRelogin).map(\.id)
         usageStore.seedNeedsRelogin(flaggedIds)
@@ -257,7 +267,7 @@ final class AppState {
         }
         let flagged = accounts.filter { usageStore.states[$0.id]?.needsRelogin == true }
         guard !flagged.isEmpty else { return }
-        await usageStore.refresh(accounts: usageInputs(flagged))
+        await usageStore.refresh(accounts: await usageInputs(flagged))
     }
 
     var labelModel: MenuBarLabelModel {
@@ -280,37 +290,52 @@ final class AppState {
             return !UsageStore.shouldSkip(cycle: cycle, failureCount: failures)
         }
         guard !due.isEmpty else { return }
-        await cuxRefresher.refreshIfNeeded(accounts: due)
-        await usageStore.refresh(accounts: usageInputs(due))
+        await usageStore.refresh(accounts: await usageInputs(due))
     }
 
-    /// Pairs each account with its token and, for tokenless cux slots, the
-    /// snapshot cux itself polled into ~/.cux/runtime/usage-cache.json
-    /// (joined on organizationUuid). Reads the cache file once per refresh.
+    /// Pairs each account with its token via StatusBarCore's
+    /// `TokenResolution` (see its doc comment for the isActive gating this
+    /// replays). Each account's decision is additionally logged to
+    /// `token-resolution.log` under `paths.root` — there to give the
+    /// still-unexplained intermittent Keychain re-prompt real evidence: if
+    /// the log from the exact cycle when the prompt fired shows
+    /// `tokenSource=keychainFallback` alongside an unexpectedly nil orgUuid,
+    /// that's useful context rather than leaving it a guess. Never logs a
+    /// token value.
     ///
-    /// Token resolution itself lives in StatusBarCore's `TokenResolution` (see
-    /// its doc comment for the isActive/cached gating this replays). Each
-    /// account's decision is additionally logged to `token-resolution.log`
-    /// under `paths.root` — there to give the still-unexplained intermittent
-    /// Keychain re-prompt real evidence: if the log from the exact cycle when
-    /// the prompt fired shows `tokenSource=keychainFallback` alongside an
-    /// unexpectedly nil orgUuid or false cuxCacheHit for an account cux has
-    /// already cached, that confirms a transient read racing cux's own
-    /// rewrite of oauth.json / usage-cache.json, rather than leaving it a
-    /// guess. Never logs a token value.
+    /// Awaits `selfHealTask` first (a no-op once it's already finished, which
+    /// it normally is well before any of this function's three call sites
+    /// run) — see the comment where that task is created in `start()`. Then
+    /// runs a *fresh* `LiveCredentialSelfHeal.run` on every call, not just at
+    /// launch: for a native multi-account setup every account's `oauthURL`
+    /// is a `/dev/null` placeholder (see `NativeAccountStore`), so the active
+    /// account's token comes from the Keychain fallback on every single poll
+    /// cycle, not just occasionally. `claude` itself rewrites the shared
+    /// `"Claude Code-credentials"` item via a plain `security
+    /// add-generic-password -U` on its own login/refresh flows (see
+    /// `LiveCredentialWriter`'s doc comment) — that resets the ACL to a
+    /// default single-writer state that no longer trusts this app, and
+    /// nothing repaired that mid-session before this change, since self-heal
+    /// only ran once per launch. `run` itself stays cheap when trust is
+    /// intact — it probes non-interactively via `isTrusted` and only
+    /// rewrites the ACL when that probe fails — so calling it here doesn't
+    /// re-litigate the "not on a timer" concern in its own doc comment; it
+    /// only pays the ACL-rewrite cost exactly when an external reset has
+    /// actually happened, right before the read that would otherwise pop a
+    /// permission dialog.
     private func usageInputs(
         _ accounts: [Account]
-    ) -> [(account: Account, token: String?, cached: UsageSnapshot?)] {
-        let cache = CuxUsageCache.load(
-            file: cuxRoot.appendingPathComponent("runtime/usage-cache.json"))
+    ) async -> [(account: Account, token: String?)] {
+        _ = await selfHealTask?.value
+        _ = await LiveCredentialSelfHeal.run(
+            diagnosticLog: paths.root.appendingPathComponent("native-switch.log"))
         var diagnostics: [TokenResolutionDiagnostics.Entry] = []
-        let result = accounts.map { account -> (account: Account, token: String?, cached: UsageSnapshot?) in
-            let cached = account.organizationUuid.flatMap { cache[$0] }
-            let (token, source) = TokenResolution.resolve(account: account, cached: cached)
+        let result = accounts.map { account -> (account: Account, token: String?) in
+            let (token, source) = TokenResolution.resolve(account: account)
             diagnostics.append(.init(accountId: account.id, isActive: account.isActive,
                                      organizationUuid: account.organizationUuid,
-                                     cacheHit: cached != nil, source: source))
-            return (account, token, cached)
+                                     source: source))
+            return (account, token)
         }
         TokenResolutionDiagnostics.write(
             diagnostics, to: paths.root.appendingPathComponent("token-resolution.log"))

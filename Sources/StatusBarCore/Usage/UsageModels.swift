@@ -30,8 +30,10 @@ public struct UsageSnapshot: Codable, Equatable, Sendable {
         return parse(object: obj, fetchedAt: fetchedAt)
     }
 
-    /// Same tolerance for an already-deserialized JSON object — cux's usage
-    /// cache nests per-org entries with the identical window shape.
+    /// Same tolerance for an already-deserialized JSON object — split out so
+    /// `parse(_:fetchedAt:)` above can decode once and delegate here, and so
+    /// callers that already hold a decoded object can parse it directly
+    /// without a redundant encode/decode round trip.
     public static func parse(object obj: [String: Any], fetchedAt: Date) -> UsageSnapshot? {
         let five = window(from: obj["five_hour"])
         let seven = window(from: obj["seven_day"])

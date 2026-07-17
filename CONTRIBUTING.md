@@ -54,6 +54,5 @@ This codebase is developed test-first, and the existing suite in
 ## Reporting bugs / proposing features
 
 Use [GitHub Issues](https://github.com/juzser/claude-status-bar-macos/issues).
-For bugs, include your macOS version and, if relevant, whether you're using
-[cux](https://cux.inulute.com) multi-account mode or the plain
-`~/.claude/.credentials.json` path.
+For bugs, include your macOS version and, if relevant, whether you were using
+multi-account mode or a single account.
