@@ -5,7 +5,7 @@ import Foundation
 /// the design doc's Style catalog section for the authored set.
 enum MessageStylesVi {
     static let all: [MessageStyle] = [
-        classic, rpg, gardening, dumb, scifi, cooking, pirate, harrypotter, office, design, dev,
+        classic, dumb, rpg, gardening, cooking, pirate, harrypotter, office, design, dev,
     ]
 
     /// Total lookup: unknown id falls back to Vietnamese classic, not the
@@ -74,21 +74,6 @@ enum MessageStylesVi {
             "Delegating": "Nhờ đứa khác làm", "Working": "Làm được tí gì",
         ],
         waiting: "Tới lượt bạn đó")
-
-    static let scifi = MessageStyle(
-        id: "scifi", name: "Sci-Fi",
-        thinking: [
-            "Dò sóng lạ", "Sạc pin photon", "Tính giờ warp", "Du hành xuyên không",
-            "Giải mã tín hiệu", "Canh giờ đổ bộ", "Khám phá hành tinh", "Ngắm sao băng bay",
-            "Vá lỗ đen", "Dò UFO ngoài kia", "Nạp nhiên liệu warp", "Ghé trạm vũ trụ",
-        ],
-        tool: [
-            "Editing": "Vá lại con chip", "Running": "Nổ máy tăng tốc",
-            "Reading": "Dò dữ liệu cũ", "Searching": "Quét khắp ngân hà",
-            "Browsing": "Dò kênh liên lạc", "Delegating": "Điều robot đi làm",
-            "Working": "Chạy full công suất",
-        ],
-        waiting: "Chờ lệnh chỉ huy")
 
     static let cooking = MessageStyle(
         id: "cooking", name: "Cooking",

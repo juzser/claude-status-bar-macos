@@ -15,7 +15,7 @@ public struct MessageStyle: Identifiable, Sendable {
 
 public enum MessageStyles {
     public static let all: [MessageStyle] = [
-        classic, rpg, gardening, dumb, scifi, cooking, pirate, harrypotter, office, design, dev,
+        classic, dumb, rpg, gardening, cooking, pirate, harrypotter, office, design, dev,
     ]
 
     /// Total lookup: an id persisted by a future version (or corrupted)
@@ -82,20 +82,6 @@ public enum MessageStyles {
                "Browsing": "Surfing the webs", "Delegating": "Making friends work",
                "Working": "Doing the thing"],
         waiting: "Your turn buddy")
-
-    static let scifi = MessageStyle(
-        id: "scifi", name: "Sci-Fi",
-        thinking: ["Computing warp trajectories", "Consulting ship AI",
-                   "Charting an unknown planet", "Charging photon banks",
-                   "Mapping wormhole routes", "Decoding alien signals",
-                   "Aligning the antenna", "Simulating first contact",
-                   "Cooling the reactor", "Plotting orbital burns",
-                   "Syncing quantum clocks", "Docking with the station"],
-        tool: ["Editing": "Rewiring the core", "Running": "Firing the thrusters",
-               "Reading": "Scanning data banks", "Searching": "Probing deep space",
-               "Browsing": "Hailing distant stations", "Delegating": "Deploying drone fleet",
-               "Working": "Running ship diagnostics"],
-        waiting: "Awaiting your orders")
 
     static let cooking = MessageStyle(
         id: "cooking", name: "Cooking",
