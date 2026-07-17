@@ -40,22 +40,12 @@ public final class UsageStore {
         return cycle % interval != 0
     }
 
-    /// A cux cache snapshot older than this shows as stale — cux's hooks
-    /// normally repoll within minutes, so a 30-minute-old entry means cux
-    /// hasn't been active.
-    public static let cuxCacheFreshFor: TimeInterval = 30 * 60
-
     public func refresh(accounts: [(account: Account, token: String?)]) async {
-        await refresh(accounts: accounts.map { ($0.account, $0.token, nil) })
-    }
-
-    public func refresh(accounts: [(account: Account, token: String?, cached: UsageSnapshot?)],
-                        now: Date = Date()) async {
         let fetcher = self.fetcher
         let fetched = await withTaskGroup(
             of: (String, Result<UsageSnapshot, UsageError>).self
         ) { group in
-            for (account, token, _) in accounts {
+            for (account, token) in accounts {
                 guard let token else { continue }
                 group.addTask {
                     do {
@@ -74,7 +64,7 @@ public final class UsageStore {
             return collected
         }
 
-        for (account, token, cached) in accounts {
+        for (account, token) in accounts {
             let id = account.id
             var state = states[id] ?? AccountUsageState()
             switch token.flatMap({ _ in fetched[id] }) {
@@ -87,18 +77,14 @@ public final class UsageStore {
             case .failure:
                 state.freshness = .stale
                 state.failureCount += 1
-            case nil:  // no token — cux slot account or missing credentials
-                if let cached {
-                    let fresh = now.timeIntervalSince(cached.fetchedAt) <= Self.cuxCacheFreshFor
-                    state = AccountUsageState(snapshot: cached,
-                                              freshness: fresh ? .fresh : .stale)
-                } else if account.slot != nil {
-                    // A slot-having account with no cache hit and no prior
-                    // state defaults to needsRelogin == false (via
-                    // AccountUsageState()'s own default) — but if this ID
-                    // was pre-seeded via seedNeedsRelogin (a migrated
-                    // native account with no vault backup), that flag
-                    // must survive this cycle, not be reset here.
+            case nil:  // no token — slot account or missing credentials
+                if account.slot != nil {
+                    // A slot-having account with no prior state defaults to
+                    // needsRelogin == false (via AccountUsageState()'s own
+                    // default) — but if this ID was pre-seeded via
+                    // seedNeedsRelogin (a migrated native account with no
+                    // vault backup), that flag must survive this cycle, not
+                    // be reset here.
                 } else {
                     state.needsRelogin = true
                 }

@@ -19,9 +19,7 @@ struct AccountsSection: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Accounts").font(.caption).foregroundStyle(.secondary)
             if accounts.isEmpty {
-                Text(CuxAvailability.isInstalled()
-                     ? "No Claude account found — log in with cux or Claude Code"
-                     : "No Claude account found — log in with claude /login")
+                Text("No Claude account found — log in with claude /login")
                     .font(.callout).foregroundStyle(.secondary)
             } else {
                 ForEach(accounts) { account in

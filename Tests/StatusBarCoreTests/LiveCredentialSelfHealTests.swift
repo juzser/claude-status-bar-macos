@@ -3,9 +3,9 @@ import Testing
 @testable import StatusBarCore
 
 @Suite struct LiveCredentialSelfHealTests {
-    @Test func writesCurrentLiveCredentialsBackWithTrustedPaths() {
+    @Test func writesCurrentLiveCredentialsBackWithTrustedPaths() async {
         var captured: (Data, [String])?
-        let ok = LiveCredentialSelfHeal.run(
+        let ok = await LiveCredentialSelfHeal.run(
             isTrusted: { false },
             read: { Data("current-creds".utf8) },
             write: { data, paths in captured = (data, paths); return true },
@@ -17,9 +17,9 @@ import Testing
         #expect(captured?.1 == ["/Applications/ClaudeStatusBar.app", "/opt/homebrew/bin/claude"])
     }
 
-    @Test func noOpWhenNoLiveCredentialsExistYet() {
+    @Test func noOpWhenNoLiveCredentialsExistYet() async {
         var writeCalled = false
-        let ok = LiveCredentialSelfHeal.run(
+        let ok = await LiveCredentialSelfHeal.run(
             isTrusted: { false },
             read: { nil },
             write: { _, _ in writeCalled = true; return true },
@@ -30,8 +30,8 @@ import Testing
         #expect(writeCalled == false)
     }
 
-    @Test func returnsFalseWhenWriteFails() {
-        let ok = LiveCredentialSelfHeal.run(
+    @Test func returnsFalseWhenWriteFails() async {
+        let ok = await LiveCredentialSelfHeal.run(
             isTrusted: { false },
             read: { Data("current-creds".utf8) },
             write: { _, _ in false },
@@ -41,13 +41,13 @@ import Testing
         #expect(ok == false)
     }
 
-    @Test func appendsSuccessDiagnostic() throws {
+    @Test func appendsSuccessDiagnostic() async throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let log = dir.appendingPathComponent("native-switch.log")
         defer { try? FileManager.default.removeItem(at: dir) }
 
-        _ = LiveCredentialSelfHeal.run(
+        _ = await LiveCredentialSelfHeal.run(
             diagnosticLog: log,
             isTrusted: { false },
             read: { Data("creds".utf8) },
@@ -59,13 +59,13 @@ import Testing
         #expect(contents.contains("self-heal ACL succeeded"))
     }
 
-    @Test func appendsFailureDiagnosticWhenWriteFails() throws {
+    @Test func appendsFailureDiagnosticWhenWriteFails() async throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let log = dir.appendingPathComponent("native-switch.log")
         defer { try? FileManager.default.removeItem(at: dir) }
 
-        _ = LiveCredentialSelfHeal.run(
+        _ = await LiveCredentialSelfHeal.run(
             diagnosticLog: log,
             isTrusted: { false },
             read: { Data("creds".utf8) },
@@ -77,10 +77,10 @@ import Testing
         #expect(contents.contains("self-heal ACL failed"))
     }
 
-    @Test func skipsReadAndWriteWhenAlreadyTrusted() {
+    @Test func skipsReadAndWriteWhenAlreadyTrusted() async {
         var readCalled = false
         var writeCalled = false
-        let ok = LiveCredentialSelfHeal.run(
+        let ok = await LiveCredentialSelfHeal.run(
             isTrusted: { true },
             read: { readCalled = true; return Data("creds".utf8) },
             write: { _, _ in writeCalled = true; return true },
@@ -92,13 +92,13 @@ import Testing
         #expect(writeCalled == false)
     }
 
-    @Test func appendsSkippedDiagnosticWhenAlreadyTrusted() throws {
+    @Test func appendsSkippedDiagnosticWhenAlreadyTrusted() async throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let log = dir.appendingPathComponent("native-switch.log")
         defer { try? FileManager.default.removeItem(at: dir) }
 
-        _ = LiveCredentialSelfHeal.run(
+        _ = await LiveCredentialSelfHeal.run(
             diagnosticLog: log,
             isTrusted: { true },
             read: { Data("creds".utf8) },

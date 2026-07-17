@@ -2,17 +2,18 @@ import Foundation
 
 /// Switches the active Claude account by writing directly to the
 /// `"Claude Code-credentials"` Keychain item and `~/.claude.json`'s
-/// `"oauthAccount"` block, mirroring cux's `SwitchTo` staging order:
-/// read target backup -> back up outgoing live state -> write target live
-/// credentials -> write target live oauthAccount block (rolling back the
-/// credentials write if this fails) -> persist the new active id.
+/// `"oauthAccount"` block, in a staging order chosen so a failure partway
+/// through can never leave the two out of sync with each other: read target
+/// backup -> back up outgoing live state -> write target live credentials
+/// -> write target live oauthAccount block (rolling back the credentials
+/// write if this fails) -> persist the new active id.
 public actor NativeAccountSwitcher {
     private let stateFile: URL
     private let diagnosticLog: URL?
     private let readVaultBackup: (String) -> CredentialBackup?
     private let writeVaultBackup: (String, CredentialBackup) -> Bool
     private let readLiveCredentials: () -> Data?
-    private let writeLiveCredentials: (Data) -> Bool
+    private let writeLiveCredentials: (Data) async -> Bool
     private let readLiveOauthBlock: () -> Data?
     private let writeLiveOauthBlock: (Data?) -> Bool
     private let loadState: (URL) -> NativeAccountState
@@ -24,10 +25,11 @@ public actor NativeAccountSwitcher {
         readVaultBackup: @escaping (String) -> CredentialBackup? = { AccountCredentialVault.read(accountId: $0) },
         writeVaultBackup: @escaping (String, CredentialBackup) -> Bool = { AccountCredentialVault.write(accountId: $0, $1) },
         readLiveCredentials: @escaping () -> Data? = { LiveCredentialWriter.read() },
-        writeLiveCredentials: @escaping (Data) -> Bool = { data in
-            LiveCredentialWriter.write(data, trustedPaths: LiveCredentialWriter.trustedPaths(
+        writeLiveCredentials: @escaping (Data) async -> Bool = { data in
+            let claudePath = await ClaudeBinaryLocator.shared.resolve()
+            return LiveCredentialWriter.write(data, trustedPaths: LiveCredentialWriter.trustedPaths(
                 thisAppPath: Bundle.main.bundlePath,
-                claudePath: LiveCredentialWriter.resolvedClaudePath()))
+                claudePath: claudePath))
         },
         readLiveOauthBlock: @escaping () -> Data? = { NativeAccountSwitcher.defaultReadLiveOauthBlock() },
         writeLiveOauthBlock: @escaping (Data?) -> Bool = { blockData in
@@ -75,13 +77,13 @@ public actor NativeAccountSwitcher {
             }
         }
 
-        guard writeLiveCredentials(backup.liveCredentials) else {
+        guard await writeLiveCredentials(backup.liveCredentials) else {
             writeDiagnostic("switch to \(account.id) failed: could not write live credentials")
             return false
         }
 
         guard writeLiveOauthBlock(backup.oauthAccountBlock) else {
-            _ = writeLiveCredentials(currentLiveCredentials)
+            _ = await writeLiveCredentials(currentLiveCredentials)
             _ = writeLiveOauthBlock(currentLiveOauthBlock)
             writeDiagnostic("switch to \(account.id) failed: could not write oauthAccount block, rolled back")
             return false
@@ -112,9 +114,9 @@ public actor NativeAccountSwitcher {
     }
 
     /// `~/.claude.json`'s top-level `"oauthAccount"` key, treated as an
-    /// opaque JSON sub-object exactly as cux does — this app never
-    /// interprets its fields except via `AccountDiscovery.emailAddress(from:)`
-    /// / `.organizationUuid(from:)` when capturing a brand-new login.
+    /// opaque JSON sub-object — this app never interprets its fields except
+    /// via `AccountDiscovery.emailAddress(from:)` /
+    /// `.organizationUuid(from:)` when capturing a brand-new login.
     public static func defaultReadLiveOauthBlock(
         configFile: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude.json")
     ) -> Data? {

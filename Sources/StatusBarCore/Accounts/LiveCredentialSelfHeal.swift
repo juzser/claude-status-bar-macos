@@ -4,8 +4,8 @@ import Foundation
 /// trusts this app, independent of `NativeAccountSwitcher.switchTo()` ever
 /// succeeding. `LiveCredentialWriter.write`'s ACL fix (see its doc comment)
 /// used to only run as a side effect of a successful switch — an account
-/// whose only switch attempt fails (e.g. a migrated cux slot with no vault
-/// backup) never benefited from it, and kept hitting macOS's Keychain
+/// whose only switch attempt fails (e.g. a migrated native account with no
+/// vault backup) never benefited from it, and kept hitting macOS's Keychain
 /// prompt on every `TokenResolution` `keychainFallback` read instead.
 ///
 /// Meant to run once per app launch, not on a timer: `SecAccessCreate`
@@ -26,11 +26,11 @@ public enum LiveCredentialSelfHeal {
         isTrusted: () -> Bool = { LiveCredentialWriter.isAlreadyTrusted() },
         read: () -> Data? = { LiveCredentialWriter.read() },
         write: (Data, [String]) -> Bool = { data, paths in LiveCredentialWriter.write(data, trustedPaths: paths) },
-        trustedPaths: () -> [String] = {
-            LiveCredentialWriter.trustedPaths(thisAppPath: Bundle.main.bundlePath,
-                                              claudePath: LiveCredentialWriter.resolvedClaudePath())
+        trustedPaths: () async -> [String] = {
+            let claudePath = await ClaudeBinaryLocator.shared.resolve()
+            return LiveCredentialWriter.trustedPaths(thisAppPath: Bundle.main.bundlePath, claudePath: claudePath)
         }
-    ) -> Bool {
+    ) async -> Bool {
         if isTrusted() {
             writeDiagnostic("self-heal ACL skipped: already trusted", to: diagnosticLog)
             return true
@@ -39,7 +39,7 @@ public enum LiveCredentialSelfHeal {
             writeDiagnostic("self-heal ACL skipped: no live credentials found", to: diagnosticLog)
             return false
         }
-        let succeeded = write(data, trustedPaths())
+        let succeeded = write(data, await trustedPaths())
         writeDiagnostic(succeeded ? "self-heal ACL succeeded" : "self-heal ACL failed: write rejected",
                         to: diagnosticLog)
         return succeeded

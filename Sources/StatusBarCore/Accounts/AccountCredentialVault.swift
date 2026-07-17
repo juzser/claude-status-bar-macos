@@ -62,8 +62,8 @@ public enum AccountCredentialVault {
         SecItemDelete(query as CFDictionary)
         var attributes = query
         attributes[kSecValueData as String] = data
-        // ThisDeviceOnly: unlike the live credential item (which claude/cux
-        // also read), this backup vault is app-private and never needs to
+        // ThisDeviceOnly: unlike the live credential item (which `claude`
+        // also reads), this backup vault is app-private and never needs to
         // migrate via an iCloud Keychain / device-to-device restore.
         attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         return SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess

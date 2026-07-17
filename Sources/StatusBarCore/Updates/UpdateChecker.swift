@@ -1,9 +1,9 @@
 import Foundation
 
 /// Checks GitHub Releases for a version newer than the running app, at most
-/// once per `minInterval` in the background — mirrors CuxRefresher's shape.
-/// Failures are swallowed: a failed check just means the caller sees `nil`,
-/// never a user-facing error.
+/// once per `minInterval` in the background. Failures are swallowed: a
+/// failed check just means the caller sees `nil`, never a user-facing
+/// error.
 public actor UpdateChecker {
     public static let minInterval: TimeInterval = 86400
 

@@ -71,17 +71,27 @@ features (e.g. exit tests, custom traits) when writing tests here.
   fire-and-forget from Claude Code's perspective and must never block or
   corrupt a session.
 - **OAuth tokens are read at request time only**, kept in a local variable,
-  and never logged, cached, or written elsewhere (`AppState.token`). Newer
-  cux versions (v0.2.11+) keep the real token only in the macOS Keychain, not
-  in any slot's `oauth.json`, so `token(for:)` falls back to
-  `AccountDiscovery.keychainAccessToken()` — but only when `account.isActive`,
-  since cux swaps just the active slot's token into the Keychain and applying
-  the fallback to inactive accounts would misattribute that token to them.
-  That fallback is further gated on the account's org having no entry yet in
-  cux's own usage cache (`cached == nil`) — cux rewrites the shared Keychain
-  item on every `cux switch`, resetting macOS's "Always Allow" grant for it,
-  so an unconditional per-poll-cycle Keychain read re-prompts the user
-  constantly for no benefit once a cached snapshot already covers that org.
+  and never logged, cached, or written elsewhere
+  (`AppState.usageInputs(_:)` → `TokenResolution.resolve(account:)`). Only
+  the active account's credentials live in the shared
+  `"Claude Code-credentials"` Keychain item — both the `claude` CLI and this
+  app's `NativeAccountSwitcher` write to that one shared item when switching
+  the active account — so `TokenResolution.resolve` falls back to
+  `AccountDiscovery.keychainAccessToken()` only when `account.isActive`;
+  applying that fallback to an inactive account would misattribute whatever
+  token currently sits in the shared item to the wrong account.
+- **`ClaudeBinaryLocator` resolves the real `claude` binary dynamically**
+  because a static candidate list can't keep up with every install method
+  (nvm-installed npm globals, the curl installer's `~/.local/bin`, other
+  version-manager shims). When `LiveCredentialWriter`'s static candidates
+  miss, it falls back to `command -v claude` run through
+  `InteractiveShellRunner` (an interactive `zsh -ilc`, so it sees the same
+  PATH the user's own terminal would). This is what the Keychain ACL trusts
+  alongside this app's own bundle path — a static-list miss used to mean the
+  ACL only ever trusted the app, so every `claude` invocation re-triggered a
+  Keychain "Allow" prompt; `LiveCredentialSelfHeal` also re-asserts this ACL
+  once per launch so accounts that predate this fix stop re-prompting
+  without needing a fresh account switch to pick it up.
 
 ## Workflow
 

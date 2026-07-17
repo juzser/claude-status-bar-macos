@@ -7,50 +7,66 @@ private func account(id: String = "acct", isActive: Bool = false) -> Account {
             oauthURL: URL(fileURLWithPath: "/dev/null"))
 }
 
-private func snapshot() -> UsageSnapshot {
-    UsageSnapshot(fiveHour: nil, sevenDay: nil, fetchedAt: Date(timeIntervalSinceReferenceDate: 0))
-}
-
 @Suite("TokenResolution")
 struct TokenResolutionTests {
-    @Test("returns the oauth-file token when present, regardless of isActive or cached")
+    @Test("returns the oauth-file token when present, regardless of isActive")
     func resolvesFromOauthFile() {
         let (token, source) = TokenResolution.resolve(
-            account: account(isActive: false), cached: snapshot(),
+            account: account(isActive: false),
             oauthData: { _ in Data(#"{"claudeAiOauth":{"accessToken":"tok"}}"#.utf8) },
             keychainAccessToken: { Issue.record("should not consult Keychain"); return nil })
         #expect(token == "tok")
         #expect(source == .oauthFile)
     }
 
-    @Test("returns none when oauth is empty and the account isn't active")
+    @Test("returns none when oauth is empty, the account isn't active, and no vault backup exists")
     func returnsNoneWhenInactive() {
         let (token, source) = TokenResolution.resolve(
-            account: account(isActive: false), cached: nil,
+            account: account(isActive: false),
             oauthData: { _ in nil },
-            keychainAccessToken: { Issue.record("should not consult Keychain"); return nil })
+            keychainAccessToken: { Issue.record("should not consult Keychain"); return nil },
+            vaultBackup: { _ in nil })
         #expect(token == nil)
         #expect(source == .none)
     }
 
-    @Test("returns none when oauth is empty, active, but a cached snapshot already exists")
-    func returnsNoneWhenCached() {
-        let (token, source) = TokenResolution.resolve(
-            account: account(isActive: true), cached: snapshot(),
-            oauthData: { _ in nil },
-            keychainAccessToken: { Issue.record("should not consult Keychain"); return nil })
-        #expect(token == nil)
-        #expect(source == .none)
-    }
-
-    @Test("falls back to the Keychain only when active with no cached snapshot")
+    @Test("falls back to the Keychain when active with no oauth-file token")
     func fallsBackToKeychain() {
         let (token, source) = TokenResolution.resolve(
-            account: account(isActive: true), cached: nil,
+            account: account(isActive: true),
             oauthData: { _ in nil },
             keychainAccessToken: { "keychain-tok" })
         #expect(token == "keychain-tok")
         #expect(source == .keychainFallback)
+    }
+
+    @Test("falls back to the credential vault when inactive with no oauth-file token")
+    func fallsBackToVaultBackupWhenInactive() {
+        let backup = CredentialBackup(
+            liveCredentials: Data(#"{"claudeAiOauth":{"accessToken":"vault-tok"}}"#.utf8),
+            oauthAccountBlock: nil)
+        let (token, source) = TokenResolution.resolve(
+            account: account(id: "slot-2", isActive: false),
+            oauthData: { _ in nil },
+            keychainAccessToken: { Issue.record("should not consult Keychain"); return nil },
+            vaultBackup: { accountId in
+                #expect(accountId == "slot-2")
+                return backup
+            })
+        #expect(token == "vault-tok")
+        #expect(source == .vaultBackup)
+    }
+
+    @Test("returns none when the vault backup exists but doesn't parse to a token")
+    func returnsNoneWhenVaultBackupUnparseable() {
+        let backup = CredentialBackup(liveCredentials: Data("not json".utf8), oauthAccountBlock: nil)
+        let (token, source) = TokenResolution.resolve(
+            account: account(isActive: false),
+            oauthData: { _ in nil },
+            keychainAccessToken: { Issue.record("should not consult Keychain"); return nil },
+            vaultBackup: { _ in backup })
+        #expect(token == nil)
+        #expect(source == .none)
     }
 }
 
@@ -62,13 +78,13 @@ struct TokenResolutionDiagnosticsTests {
         let text = TokenResolutionDiagnostics.format(
             [
                 .init(accountId: "slot-1", isActive: true, organizationUuid: "org-aaa",
-                      cacheHit: false, source: .keychainFallback),
+                      source: .keychainFallback),
                 .init(accountId: "slot-2", isActive: false, organizationUuid: nil,
-                      cacheHit: true, source: .none),
+                      source: .none),
             ], now: now)
         #expect(text.hasPrefix("timestamp: "))
-        #expect(text.contains("slot-1 isActive=true orgUuid=org-aaa cuxCacheHit=false tokenSource=keychainFallback"))
-        #expect(text.contains("slot-2 isActive=false orgUuid=nil cuxCacheHit=true tokenSource=none"))
+        #expect(text.contains("slot-1 isActive=true orgUuid=org-aaa tokenSource=keychainFallback"))
+        #expect(text.contains("slot-2 isActive=false orgUuid=nil tokenSource=none"))
     }
 
     @Test("write overwrites the file on each call rather than appending")
@@ -80,14 +96,14 @@ struct TokenResolutionDiagnosticsTests {
 
         TokenResolutionDiagnostics.write(
             [.init(accountId: "slot-1", isActive: true, organizationUuid: "org-aaa",
-                   cacheHit: false, source: .keychainFallback)],
+                   source: .keychainFallback)],
             to: file, now: Date(timeIntervalSinceReferenceDate: 0))
         let first = try String(contentsOf: file, encoding: .utf8)
         #expect(first.contains("slot-1"))
 
         TokenResolutionDiagnostics.write(
             [.init(accountId: "slot-2", isActive: false, organizationUuid: nil,
-                   cacheHit: true, source: .oauthFile)],
+                   source: .oauthFile)],
             to: file, now: Date(timeIntervalSinceReferenceDate: 1))
         let second = try String(contentsOf: file, encoding: .utf8)
         #expect(!second.contains("slot-1"))

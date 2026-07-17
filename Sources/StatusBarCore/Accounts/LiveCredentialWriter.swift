@@ -6,7 +6,8 @@ import Security
 /// `SecAccess`/`SecTrustedApplication` ACL naming both `claude` and this app,
 /// rather than the default single-writer ACL `security add-generic-password
 /// -U` leaves behind (that reset is the root cause of the intermittent
-/// Keychain re-prompt cux used to cause).
+/// Keychain re-prompt this app's self-heal and account-switching paths
+/// exist to fix).
 public enum LiveCredentialWriter {
     public static let service = "Claude Code-credentials"
 
@@ -54,7 +55,7 @@ public enum LiveCredentialWriter {
 
     /// Queries on `kSecAttrService`+`kSecAttrAccount` (not just
     /// `kSecAttrLabel`, as the previous implementation did) so the item
-    /// matches what `claude`/`cux` themselves key on when looking it up.
+    /// matches what `claude` itself keys on when looking it up.
     /// `account` defaults to the current macOS username via `defaultWrite`:
     /// forensic inspection of a real `claude`-written item (a single
     /// narrowly-scoped `security find-generic-password -s "Claude
@@ -63,10 +64,10 @@ public enum LiveCredentialWriter {
     ///
     /// Uses `SecItemUpdate`-or-add rather than delete-then-add: a delete
     /// followed by a failed add would leave the live item entirely missing,
-    /// which is worse than anything the old `cux switch` path could do since
-    /// it never touched this item directly. Falls back to `add` only when
-    /// `update` reports the item doesn't exist yet; any other update failure
-    /// is reported as failure without touching the existing item.
+    /// which is worse than simply leaving the existing item untouched on
+    /// failure. Falls back to `add` only when `update` reports the item
+    /// doesn't exist yet; any other update failure is reported as failure
+    /// without touching the existing item.
     static func performWrite(
         data: Data,
         trustedPaths: [String],

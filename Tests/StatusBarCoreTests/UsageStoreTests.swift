@@ -96,58 +96,15 @@ private func makeStore(_ results: [String: Result<UsageSnapshot, UsageError>]) -
         #expect(store.states["a"]?.snapshot == nil)
     }
 
-    // cux slot accounts carry no token in oauth.json (real tokens live in the
-    // Keychain); usage comes from cux's own cache, keyed by organizationUuid.
-
-    @Test func cuxCacheSnapshotFeedsUsageWithoutToken() async {
+    @Test func slotAccountWithoutTokenDoesNotFlagRelogin() async {
+        // A slot-having account with no token and no prior state means "no
+        // data yet", never "logged out" — see the `account.slot != nil`
+        // branch in `refresh`.
         let (store, cache) = makeStore([:])
         defer { try? FileManager.default.removeItem(at: cache.deletingLastPathComponent()) }
-        let now = Date()
-        let cached = UsageSnapshot(fiveHour: UsageWindow(utilization: 23),
-                                   sevenDay: UsageWindow(utilization: 65),
-                                   fetchedAt: now.addingTimeInterval(-60))
-        await store.refresh(accounts: [(account("a", slot: 1), nil, cached)], now: now)
-        #expect(store.states["a"]?.snapshot?.fiveHour?.utilization == 23)
-        #expect(store.states["a"]?.freshness == .fresh)
-        #expect(store.states["a"]?.needsRelogin == false)
-    }
-
-    @Test func oldCuxCacheSnapshotIsStale() async {
-        let (store, cache) = makeStore([:])
-        defer { try? FileManager.default.removeItem(at: cache.deletingLastPathComponent()) }
-        let now = Date()
-        let cached = UsageSnapshot(fiveHour: UsageWindow(utilization: 23), sevenDay: nil,
-                                   fetchedAt: now.addingTimeInterval(-UsageStore.cuxCacheFreshFor - 1))
-        await store.refresh(accounts: [(account("a", slot: 1), nil, cached)], now: now)
-        #expect(store.states["a"]?.snapshot?.fiveHour?.utilization == 23)
-        #expect(store.states["a"]?.freshness == .stale)
-        #expect(store.states["a"]?.needsRelogin == false)
-    }
-
-    @Test func cuxAccountWithoutCacheEntryDoesNotFlagRelogin() async {
-        // cux owns auth for slot accounts — a missing cache entry means
-        // "no data yet", never "logged out".
-        let (store, cache) = makeStore([:])
-        defer { try? FileManager.default.removeItem(at: cache.deletingLastPathComponent()) }
-        await store.refresh(accounts: [(account("a", slot: 1), nil, nil)])
+        await store.refresh(accounts: [(account("a", slot: 1), nil)])
         #expect(store.states["a"]?.needsRelogin == false)
         #expect(store.states["a"]?.snapshot == nil)
-    }
-
-    @Test func cachedSnapshotClearsPriorReloginFlag() async {
-        let (store, cache) = makeStore([:])
-        defer { try? FileManager.default.removeItem(at: cache.deletingLastPathComponent()) }
-        // Legacy state from before the cux-cache path shipped.
-        await store.refresh(accounts: [(account("a"), nil)])
-        #expect(store.states["a"]?.needsRelogin == true)
-
-        let now = Date()
-        let cached = UsageSnapshot(fiveHour: UsageWindow(utilization: 10), sevenDay: nil,
-                                   fetchedAt: now.addingTimeInterval(-60))
-        await store.refresh(accounts: [(account("a", slot: 1), nil, cached)], now: now)
-        #expect(store.states["a"]?.needsRelogin == false)
-        #expect(store.states["a"]?.failureCount == 0)
-        #expect(store.states["a"]?.freshness == .fresh)
     }
 
     @Test func cacheRoundTripLoadsAsStale() async {
@@ -194,7 +151,7 @@ private func makeStore(_ results: [String: Result<UsageSnapshot, UsageError>]) -
 
         let account = Account(id: "native-0", alias: nil, email: nil, slot: 0,
                               isActive: true, oauthURL: URL(fileURLWithPath: "/dev/null"))
-        await store.refresh(accounts: [(account: account, token: nil, cached: nil)])
+        await store.refresh(accounts: [(account: account, token: nil)])
 
         #expect(store.states["native-0"]?.needsRelogin == true)
     }
@@ -203,7 +160,7 @@ private func makeStore(_ results: [String: Result<UsageSnapshot, UsageError>]) -
         let store = UsageStore(fetcher: FailingFetcher(), cacheFile: tempCacheFile())
         let account = Account(id: "native-1", alias: nil, email: nil, slot: 1,
                               isActive: false, oauthURL: URL(fileURLWithPath: "/dev/null"))
-        await store.refresh(accounts: [(account: account, token: nil, cached: nil)])
+        await store.refresh(accounts: [(account: account, token: nil)])
 
         #expect(store.states["native-1"]?.needsRelogin == false)
     }
