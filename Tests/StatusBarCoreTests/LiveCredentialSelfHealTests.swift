@@ -6,6 +6,7 @@ import Testing
     @Test func writesCurrentLiveCredentialsBackWithTrustedPaths() {
         var captured: (Data, [String])?
         let ok = LiveCredentialSelfHeal.run(
+            isTrusted: { false },
             read: { Data("current-creds".utf8) },
             write: { data, paths in captured = (data, paths); return true },
             trustedPaths: { ["/Applications/ClaudeStatusBar.app", "/opt/homebrew/bin/claude"] }
@@ -19,6 +20,7 @@ import Testing
     @Test func noOpWhenNoLiveCredentialsExistYet() {
         var writeCalled = false
         let ok = LiveCredentialSelfHeal.run(
+            isTrusted: { false },
             read: { nil },
             write: { _, _ in writeCalled = true; return true },
             trustedPaths: { [] }
@@ -30,6 +32,7 @@ import Testing
 
     @Test func returnsFalseWhenWriteFails() {
         let ok = LiveCredentialSelfHeal.run(
+            isTrusted: { false },
             read: { Data("current-creds".utf8) },
             write: { _, _ in false },
             trustedPaths: { [] }
@@ -46,6 +49,7 @@ import Testing
 
         _ = LiveCredentialSelfHeal.run(
             diagnosticLog: log,
+            isTrusted: { false },
             read: { Data("creds".utf8) },
             write: { _, _ in true },
             trustedPaths: { [] }
@@ -63,6 +67,7 @@ import Testing
 
         _ = LiveCredentialSelfHeal.run(
             diagnosticLog: log,
+            isTrusted: { false },
             read: { Data("creds".utf8) },
             write: { _, _ in false },
             trustedPaths: { [] }
@@ -70,5 +75,38 @@ import Testing
 
         let contents = try String(contentsOf: log, encoding: .utf8)
         #expect(contents.contains("self-heal ACL failed"))
+    }
+
+    @Test func skipsReadAndWriteWhenAlreadyTrusted() {
+        var readCalled = false
+        var writeCalled = false
+        let ok = LiveCredentialSelfHeal.run(
+            isTrusted: { true },
+            read: { readCalled = true; return Data("creds".utf8) },
+            write: { _, _ in writeCalled = true; return true },
+            trustedPaths: { [] }
+        )
+
+        #expect(ok)
+        #expect(readCalled == false)
+        #expect(writeCalled == false)
+    }
+
+    @Test func appendsSkippedDiagnosticWhenAlreadyTrusted() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let log = dir.appendingPathComponent("native-switch.log")
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        _ = LiveCredentialSelfHeal.run(
+            diagnosticLog: log,
+            isTrusted: { true },
+            read: { Data("creds".utf8) },
+            write: { _, _ in true },
+            trustedPaths: { [] }
+        )
+
+        let contents = try String(contentsOf: log, encoding: .utf8)
+        #expect(contents.contains("self-heal ACL skipped: already trusted"))
     }
 }

@@ -57,6 +57,19 @@ import Testing
         #expect(path == nil)
     }
 
+    // MARK: - isAlreadyTrusted
+
+    @Test func isAlreadyTrustedDelegatesToInjectedProber() {
+        let result = LiveCredentialWriter.isAlreadyTrusted(prober: { service in
+            service == LiveCredentialWriter.service
+        })
+        #expect(result)
+    }
+
+    @Test func isAlreadyTrustedReturnsFalseWhenProberFails() {
+        #expect(LiveCredentialWriter.isAlreadyTrusted(prober: { _ in false }) == false)
+    }
+
     // MARK: - performWrite
 
     @Test func performWriteUpdatesInPlaceWhenItemExists() {

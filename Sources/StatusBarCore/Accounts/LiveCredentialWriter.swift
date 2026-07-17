@@ -14,6 +14,32 @@ public enum LiveCredentialWriter {
         reader(service)
     }
 
+    /// Non-interactive probe: can the current process already read the live
+    /// item without macOS needing to show a Keychain prompt? Uses
+    /// `kSecUseAuthenticationUIFail` so an untrusted caller gets
+    /// `errSecInteractionNotAllowed` back instead of a dialog.
+    ///
+    /// `LiveCredentialSelfHeal` calls this before touching the ACL: skipping
+    /// the rewrite when the app is already trusted avoids resetting an
+    /// "Always Allow" grant that's already in place (see
+    /// `LiveCredentialSelfHeal`'s doc comment on why `SecAccessCreate` makes
+    /// that rewrite itself destructive).
+    public static func isAlreadyTrusted(prober: (String) -> Bool = defaultTrustProbe) -> Bool {
+        prober(service)
+    }
+
+    public static func defaultTrustProbe(service: String) -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrLabel as String: service,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecUseAuthenticationUI as String: kSecUseAuthenticationUIFail,
+        ]
+        var item: CFTypeRef?
+        return SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess
+    }
+
     public static func write(
         _ data: Data,
         trustedPaths: [String],
