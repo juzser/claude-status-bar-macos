@@ -34,23 +34,23 @@ enum MessageStylesVi {
         id: "rpg", name: "RPG",
         thinking: [
             "Múa kiếm chơi", "Cày cấp độ", "Săn boss trùm", "Bắn chưởng nạp lực", "Mở rương báu",
-            "Hú gọi đồng bọn", "Đào mỏ EXP", "Lao vào hầm ngục", "Né đòn chí mạng",
+            "Hú gọi đồng đội", "Đào mỏ EXP", "Lao vào hầm ngục", "Né đòn chí mạng",
             "Buff máu cả team", "Vái trời khấn Phật", "Combo chưa ra chiêu",
         ],
         tool: [
             "Editing": "Rèn kiếm mới", "Running": "Phang chiêu cái đùng",
             "Reading": "Ngâm cứu sách phép", "Searching": "Lục lọi hang động",
-            "Browsing": "Dạo quanh bản đồ", "Delegating": "Sai vặt đồng bọn",
+            "Browsing": "Dạo quanh bản đồ", "Delegating": "Sai vặt đồng đội",
             "Working": "Cày như trâu",
         ],
-        waiting: "Đang chờ lệnh sếp")
+        waiting: "Đang chờ lệnh chủ")
 
     static let gardening = MessageStyle(
         id: "gardening", name: "Gardening",
         thinking: [
             "Nhổ cỏ đầu óc", "Ngửi hoa hồng", "Bắt sâu trong đầu", "Tưới cây ý tưởng",
             "Ươm mầm non", "Bón phân cho não", "Ngắm lá vàng rơi", "Cắt tỉa hoa héo",
-            "Tỉa cành lung tung", "Đào đất trồng cây", "Ngắt hoa hái quả",
+            "Xới đất tơi xốp", "Đào đất trồng cây", "Ngắt hoa hái quả",
             "Hái cà chua chín",
         ],
         tool: [
@@ -94,7 +94,7 @@ enum MessageStylesVi {
         id: "pirate", name: "Pirate",
         thinking: [
             "Ngắm la bàn Jack", "Triệu hồi quái Kraken", "Mặc cả Davy Jones", "Nhấp rượu rum",
-            "Vàng Aztec bị nguyền", "Kéo cờ đen", "Chờ tàu Ngọc Trai", "Nhớ luật hải tặc",
+            "Chạm vàng Aztec nguyền", "Kéo cờ đen", "Chờ tàu Ngọc Trai", "Nhớ luật hải tặc",
             "Lướt ngang đảo vàng", "Né tàu ma bay", "Xin được parley", "Dong buồm ra khơi",
         ],
         tool: [
@@ -142,7 +142,7 @@ enum MessageStylesVi {
         thinking: [
             "Ngắm mood board", "Chỉnh từng pixel", "Đặt tên layer", "Dựng component mới",
             "Canh lại khoảng cách", "Chọn font phù hợp", "Nhân đôi frame", "Chỉnh Auto Layout",
-            "Phối màu palette", "Mài prototype mượt", "Gắn tên variant", "Săm soi bố cục",
+            "Phối màu palette", "Trau chuốt prototype", "Tạo thêm variant mới", "Săm soi bố cục",
         ],
         tool: [
             "Editing": "Bo góc cho đều", "Running": "Xuất file thiết kế",
