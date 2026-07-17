@@ -113,9 +113,9 @@ import Testing
     @Test func messageStyleReflectsLanguage() {
         let store = SettingsStore(defaults: makeDefaults())
         store.messageStyleId = "pirate"
-        #expect(store.messageStyle.waiting == "Cap'n needs orders")
+        #expect(store.messageStyle.waiting == "Compass points to you")
         store.language = .vietnamese
-        #expect(store.messageStyle.waiting == "Chờ lệnh thuyền trưởng")
+        #expect(store.messageStyle.waiting == "La bàn chỉ bạn")
     }
 }
 

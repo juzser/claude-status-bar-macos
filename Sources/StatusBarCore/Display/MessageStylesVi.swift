@@ -1,11 +1,11 @@
 import Foundation
 
 /// Vietnamese phrase catalog, structurally parallel to `MessageStyles.swift`:
-/// same 7 ids, same order. Phrases are original, not translations — see
+/// same ids, same order. Phrases are original, not translations — see
 /// the design doc's Style catalog section for the authored set.
 enum MessageStylesVi {
     static let all: [MessageStyle] = [
-        classic, rpg, gardening, dumb, scifi, cooking, pirate,
+        classic, rpg, gardening, dumb, scifi, cooking, pirate, harrypotter,
     ]
 
     /// Total lookup: unknown id falls back to Vietnamese classic, not the
@@ -33,8 +33,8 @@ enum MessageStylesVi {
     static let rpg = MessageStyle(
         id: "rpg", name: "RPG",
         thinking: [
-            "Múa kiếm chơi", "Cày cấp độ", "Săn boss trùm", "Đọc thần chú", "Mở rương báu",
-            "Hú gọi đồng bọn", "Đào mỏ EXP", "Ngáo phép thuật", "Né đòn chí mạng",
+            "Múa kiếm chơi", "Cày cấp độ", "Săn boss trùm", "Bắn chưởng nạp lực", "Mở rương báu",
+            "Hú gọi đồng bọn", "Đào mỏ EXP", "Lao vào hầm ngục", "Né đòn chí mạng",
             "Buff máu cả team", "Vái trời khấn Phật", "Combo chưa ra chiêu",
         ],
         tool: [
@@ -49,9 +49,9 @@ enum MessageStylesVi {
         id: "gardening", name: "Gardening",
         thinking: [
             "Nhổ cỏ đầu óc", "Ngửi hoa hồng", "Bắt sâu trong đầu", "Tưới cây ý tưởng",
-            "Ươm mầm non", "Bón phân cho não", "Ngắm lá vàng rơi", "Hóng nắng thư giãn",
+            "Ươm mầm non", "Bón phân cho não", "Ngắm lá vàng rơi", "Cắt tỉa hoa héo",
             "Tỉa cành lung tung", "Đào đất trồng cây", "Ngắt hoa hái quả",
-            "Trốn nắng trong vườn",
+            "Hái cà chua chín",
         ],
         tool: [
             "Editing": "Tỉa cành lẹ tay", "Running": "Xới đất ầm ầm",
@@ -64,12 +64,12 @@ enum MessageStylesVi {
     static let dumb = MessageStyle(
         id: "dumb", name: "Dumb",
         thinking: [
-            "Não đang load", "Đơ 5 giây", "Ủa cái gì", "Chưa nghĩ ra gì", "Đầu óc trên mây",
-            "Nạp thêm IQ", "Não cá vàng", "Bấm nút restart não", "Có ai không đó",
-            "Lú thiệt sự", "Đứng hình chấm cơm", "Suy nghĩ hộ cái",
+            "Não đang load", "Đơ 5 giây", "Não đang toang nhẹ", "Chưa nghĩ ra gì",
+            "Khum biết nghĩ gì", "Nạp thêm IQ", "Não cá vàng", "Bấm nút restart não",
+            "Có ai không đó", "Xin dừng suy nghĩ", "Đứng hình chấm cơm", "Flex cái đầu rỗng",
         ],
         tool: [
-            "Editing": "Gõ chữ loạn xạ", "Running": "Bấm nút to đùng", "Reading": "Ngó lơ ngơ",
+            "Editing": "Gõ chữ loạn xạ", "Running": "Chạy đại cho rồi", "Reading": "Đọc mà không hiểu",
             "Searching": "Tìm hoài chưa thấy", "Browsing": "Lướt web vô định",
             "Delegating": "Nhờ đứa khác làm", "Working": "Làm được tí gì",
         ],
@@ -79,8 +79,8 @@ enum MessageStylesVi {
         id: "scifi", name: "Sci-Fi",
         thinking: [
             "Dò sóng lạ", "Sạc pin photon", "Tính giờ warp", "Du hành xuyên không",
-            "Giải mã tín hiệu", "Canh giờ đổ bộ", "Buôn chuyện với AI", "Ngắm sao băng bay",
-            "Vá lỗ đen", "Dò UFO ngoài kia", "Nạp nhiên liệu warp", "Chỉnh ăng-ten dò sóng",
+            "Giải mã tín hiệu", "Canh giờ đổ bộ", "Khám phá hành tinh", "Ngắm sao băng bay",
+            "Vá lỗ đen", "Dò UFO ngoài kia", "Nạp nhiên liệu warp", "Ghé trạm vũ trụ",
         ],
         tool: [
             "Editing": "Vá lại con chip", "Running": "Nổ máy tăng tốc",
@@ -93,31 +93,47 @@ enum MessageStylesVi {
     static let cooking = MessageStyle(
         id: "cooking", name: "Cooking",
         thinking: [
-            "Nêm cho vừa", "Lật bánh lẹ", "Múa dao đầu bếp", "Canh lửa liu riu",
-            "Nếm thử chút xíu", "Ướp cho ngấm vị", "Đảo đều tay nào", "Hầm cho mềm nhừ",
-            "Trộn đều gia vị", "Canh nồi sôi trào", "Bào vỏ thái lát", "Nướng cho vàng đều",
+            "Pha cà phê muối", "Nướng bánh đồng xu", "Lắc trân châu", "Làm bánh tráng trộn",
+            "Thử thách mì cay", "Trà chanh giã tay", "Múc chè khúc bạch", "Làm gỏi cuốn tôm",
+            "Lẩu tự sôi", "Cơm cháy kho quẹt", "Sữa chua nếp cẩm", "Nhúng bánh mì que",
         ],
         tool: [
-            "Editing": "Bày món lên đĩa", "Running": "Bật bếp lửa to",
-            "Reading": "Đọc công thức nấu", "Searching": "Sục sạo tủ lạnh",
-            "Browsing": "Dạo chợ mua đồ", "Delegating": "Gọi phụ bếp ra",
-            "Working": "Đứng bếp cả ngày",
+            "Editing": "Bày biện đẹp mắt", "Running": "Đảo chảo xèo xèo",
+            "Reading": "Xem clip nấu ăn", "Searching": "Lùng nguyên liệu hiếm",
+            "Browsing": "Lướt TikTok ẩm thực", "Delegating": "Nhắn ship đồ ăn",
+            "Working": "Nấu cơm cả tuần",
         ],
-        waiting: "Lên món rồi đó")
+        waiting: "Bụng đang réo rồi")
 
     static let pirate = MessageStyle(
         id: "pirate", name: "Pirate",
         thinking: [
-            "Dò kho báu", "Buộc dây neo", "Nghe lỏm tin đồn", "Ngắm sao định hướng",
-            "Mài lưỡi đao cong", "Đếm vàng trong rương", "Nhìn xa trông biển",
-            "Nói chuyện với vẹt", "Cột chặt nút dây", "Vượt qua bão to", "Dò tìm đảo giấu",
-            "Lau ống nhòm sáng",
+            "Ngắm la bàn Jack", "Triệu hồi quái Kraken", "Mặc cả Davy Jones", "Nhấp rượu rum",
+            "Vàng Aztec bị nguyền", "Kéo cờ đen", "Chờ tàu Ngọc Trai", "Nhớ luật hải tặc",
+            "Lướt ngang đảo vàng", "Né tàu ma bay", "Xin được parley", "Dong buồm ra khơi",
         ],
         tool: [
-            "Editing": "Vá lại cánh buồm", "Running": "Khai hỏa đại bác",
-            "Reading": "Nghiên cứu bản đồ", "Searching": "Đào bới tìm vàng",
-            "Browsing": "Dò xét chân trời", "Delegating": "Hô hào cả đoàn",
-            "Working": "Cọ sàn tàu",
+            "Editing": "Trét nhựa vỏ tàu", "Running": "Khai hỏa đại bác",
+            "Reading": "Đọc nhật ký Jones", "Searching": "Săn vàng bị nguyền",
+            "Browsing": "Ngó qua ống nhòm", "Delegating": "Hô hào cả đoàn",
+            "Working": "Cọ sàn dưới trăng",
         ],
-        waiting: "Chờ lệnh thuyền trưởng")
+        waiting: "La bàn chỉ bạn")
+
+    static let harrypotter = MessageStyle(
+        id: "harrypotter", name: "Harry Potter",
+        thinking: [
+            "Niệm Wingardium Leviosa", "Niệm Expecto Patronum", "Khẽ hô Alohomora",
+            "Dựng khiên Protego", "Đọc tâm trí Legilimens", "Xua boggart bằng Riddikulus",
+            "Hóa giải Finite Incantatem", "Trói chặt Petrificus Totalus",
+            "Cách âm bằng Muffliato", "Chọc cười Rictusempra", "Niệm nhanh Stupefy",
+            "Gọi chim Avis",
+        ],
+        tool: [
+            "Editing": "Sửa đồ bằng Reparo", "Running": "Niệm Avada Kedavra",
+            "Reading": "Soi chữ bằng Revelio", "Searching": "Triệu hồi bằng Accio",
+            "Browsing": "Dò hướng Point Me", "Delegating": "Sai cú đưa thư",
+            "Working": "Dọn dẹp bằng Scourgify",
+        ],
+        waiting: "Chờ lệnh phù thủy")
 }

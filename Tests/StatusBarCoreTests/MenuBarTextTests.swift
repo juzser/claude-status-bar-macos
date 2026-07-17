@@ -159,7 +159,7 @@ private func usage(five: Double, seven: Double) -> AccountUsageState {
     @Test func waitingUsesStylePhrase() {
         let m = model(display: session(.waiting, busyFor: 45), usage: nil, style: .full,
                       messageStyle: MessageStyles.style(id: "cooking"))
-        #expect(m.activityText == "Order up, chef")
+        #expect(m.activityText == "Stomach's officially growling")
     }
 
     @Test func classicRendersByteIdenticalToV1() {

@@ -15,7 +15,7 @@ public struct MessageStyle: Identifiable, Sendable {
 
 public enum MessageStyles {
     public static let all: [MessageStyle] = [
-        classic, rpg, gardening, dumb, scifi, cooking, pirate,
+        classic, rpg, gardening, dumb, scifi, cooking, pirate, harrypotter,
     ]
 
     /// Total lookup: an id persisted by a future version (or corrupted)
@@ -44,11 +44,11 @@ public enum MessageStyles {
     static let rpg = MessageStyle(
         id: "rpg", name: "RPG",
         thinking: ["Consulting the oracle", "Rolling for wisdom",
-                   "Studying ancient runes", "Brewing mana potions",
-                   "Sharpening the sword", "Reading the prophecy",
+                   "Diving into the dungeon", "Brewing mana potions",
+                   "Facing the final boss", "Reading the prophecy",
                    "Charging the spell", "Plotting the quest",
-                   "Leveling up wisdom", "Taming wild ideas",
-                   "Gathering party buffs", "Deciphering old glyphs"],
+                   "Leveling up wisdom", "Casting a fireball",
+                   "Gathering party buffs", "Looting the boss chest"],
         tool: ["Editing": "Forging the blade", "Running": "Casting the spell",
                "Reading": "Reading the scrolls", "Searching": "Scouting the dungeon",
                "Browsing": "Charting distant lands", "Delegating": "Summoning the party",
@@ -60,9 +60,9 @@ public enum MessageStyles {
         thinking: ["Watering the seedlings", "Sprouting new ideas",
                    "Composting stray thoughts", "Sowing fresh seeds",
                    "Sniffing the roses", "Grafting wild branches",
-                   "Mulching the beds", "Sunning the sprouts",
+                   "Mulching the beds", "Deadheading the flowers",
                    "Repotting big ideas", "Trimming the hedges",
-                   "Feeding the roots", "Warming the greenhouse"],
+                   "Feeding the roots", "Harvesting the tomatoes"],
         tool: ["Editing": "Pruning the branches", "Running": "Turning the soil",
                "Reading": "Reading seed packets", "Searching": "Hunting for weeds",
                "Browsing": "Visiting the nursery", "Delegating": "Hiring garden gnomes",
@@ -72,13 +72,13 @@ public enum MessageStyles {
     static let dumb = MessageStyle(
         id: "dumb", name: "Dumb",
         thinking: ["Making think happen", "Doing brain stuff",
-                   "Vibing real hard", "Loading smart thoughts",
-                   "Buffering big brain", "Thinking really hard",
+                   "Going full goblin mode", "Loading smart thoughts",
+                   "Doom scrolling for answers", "Thinking really hard",
                    "Consulting inner monologue", "Staring at ceiling",
-                   "Rebooting the noggin", "Doing a ponder",
-                   "Cooking hot takes", "Charging brain cells"],
-        tool: ["Editing": "Typing many words", "Running": "Pressing big button",
-               "Reading": "Looking at stuff", "Searching": "Finding the thing",
+                   "Rebooting the noggin", "Being delulu on purpose",
+                   "Cooking hot takes", "Giving major NPC energy"],
+        tool: ["Editing": "Typing many words", "Running": "Hoping this works",
+               "Reading": "Reading without understanding", "Searching": "Finding the thing",
                "Browsing": "Surfing the webs", "Delegating": "Making friends work",
                "Working": "Doing the thing"],
         waiting: "Your turn buddy")
@@ -86,11 +86,11 @@ public enum MessageStyles {
     static let scifi = MessageStyle(
         id: "scifi", name: "Sci-Fi",
         thinking: ["Computing warp trajectories", "Consulting ship AI",
-                   "Calibrating the sensors", "Charging photon banks",
+                   "Charting an unknown planet", "Charging photon banks",
                    "Mapping wormhole routes", "Decoding alien signals",
                    "Aligning the antenna", "Simulating first contact",
                    "Cooling the reactor", "Plotting orbital burns",
-                   "Syncing quantum clocks", "Scanning nebula clouds"],
+                   "Syncing quantum clocks", "Docking with the station"],
         tool: ["Editing": "Rewiring the core", "Running": "Firing the thrusters",
                "Reading": "Scanning data banks", "Searching": "Probing deep space",
                "Browsing": "Hailing distant stations", "Delegating": "Deploying drone fleet",
@@ -99,29 +99,43 @@ public enum MessageStyles {
 
     static let cooking = MessageStyle(
         id: "cooking", name: "Cooking",
-        thinking: ["Tasting the broth", "Whisking fresh ideas",
-                   "Reducing the sauce", "Proofing the dough",
-                   "Caramelizing the onions", "Seasoning to taste",
-                   "Simmering the stock", "Kneading raw thoughts",
-                   "Toasting the spices", "Resting the roast",
-                   "Glazing the tart", "Julienning the details"],
-        tool: ["Editing": "Plating the dish", "Running": "Firing the stove",
-               "Reading": "Reading the recipe", "Searching": "Raiding the pantry",
-               "Browsing": "Shopping the market", "Delegating": "Calling sous chefs",
-               "Working": "Prepping the ingredients"],
-        waiting: "Order up, chef")
+        thinking: ["Whipping dalgona coffee", "Folding baked feta pasta",
+                   "Assembling birria tacos", "Stacking a smash burger",
+                   "Skewering candied tanghulu", "Building a butter board",
+                   "Drizzling hot honey", "Charring corn ribs",
+                   "Blending a matcha latte", "Frying Nashville hot chicken",
+                   "Rolling sushi burritos", "Air-frying literally everything"],
+        tool: ["Editing": "Garnishing with microgreens", "Running": "Cranking the wok",
+               "Reading": "Scrolling recipe videos", "Searching": "Hunting rare ingredients",
+               "Browsing": "Scrolling foodie TikTok", "Delegating": "Texting the delivery guy",
+               "Working": "Meal-prepping for Sunday"],
+        waiting: "Stomach's officially growling")
 
     static let pirate = MessageStyle(
         id: "pirate", name: "Pirate",
-        thinking: ["Plotting the course", "Reading the stars",
-                   "Studying the charts", "Counting gold doubloons",
-                   "Eyeing the horizon", "Trimming the mainsail",
-                   "Whispering to parrots", "Sniffing for treasure",
-                   "Tying sailor knots", "Weathering the storm",
-                   "Charting hidden coves", "Polishing the spyglass"],
-        tool: ["Editing": "Patching the sails", "Running": "Firing the cannons",
-               "Reading": "Studying the map", "Searching": "Digging for treasure",
-               "Browsing": "Scanning the horizon", "Delegating": "Rallying the crew",
-               "Working": "Swabbing the deck"],
-        waiting: "Cap'n needs orders")
+        thinking: ["Consulting Jack's compass", "Summoning the Kraken",
+                   "Bargaining with Davy Jones", "Drinking questionable rum",
+                   "Touching cursed Aztec gold", "Hoisting the black colours",
+                   "Whistling for the Pearl", "Consulting the Pirate Code",
+                   "Sailing past Isla Muerta", "Dodging the Flying Dutchman",
+                   "Parleying with the crew", "Being the worst pirate"],
+        tool: ["Editing": "Caulking the hull", "Running": "Unleashing the cannons",
+               "Reading": "Reading Jones' logbook", "Searching": "Hunting cursed treasure",
+               "Browsing": "Squinting through the spyglass", "Delegating": "Rallying the cursed crew",
+               "Working": "Swabbing under full moon"],
+        waiting: "Compass points to you")
+
+    static let harrypotter = MessageStyle(
+        id: "harrypotter", name: "Harry Potter",
+        thinking: ["Casting Wingardium Leviosa", "Casting Expecto Patronum",
+                   "Whispering Alohomora softly", "Practicing Protego shields",
+                   "Casting silent Legilimens", "Muttering old Riddikulus",
+                   "Trying Finite Incantatem", "Casting Petrificus Totalus",
+                   "Whispering quiet Muffliato", "Casting gentle Rictusempra",
+                   "Casting quick Stupefy", "Conjuring birds with Avis"],
+        tool: ["Editing": "Casting Reparo swiftly", "Running": "Casting Avada Kedavra",
+               "Reading": "Casting Revelio slowly", "Searching": "Casting Accio spell",
+               "Browsing": "Casting Point Me", "Delegating": "Sending owl post",
+               "Working": "Casting Scourgify daily"],
+        waiting: "Awaiting your next spell")
 }
