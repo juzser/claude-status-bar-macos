@@ -15,7 +15,7 @@ public struct MessageStyle: Identifiable, Sendable {
 
 public enum MessageStyles {
     public static let all: [MessageStyle] = [
-        classic, rpg, gardening, dumb, scifi, cooking, pirate, harrypotter,
+        classic, rpg, gardening, dumb, scifi, cooking, pirate, harrypotter, office, design, dev,
     ]
 
     /// Total lookup: an id persisted by a future version (or corrupted)
@@ -138,4 +138,46 @@ public enum MessageStyles {
                "Browsing": "Casting Point Me", "Delegating": "Sending owl post",
                "Working": "Casting Scourgify daily"],
         waiting: "Awaiting your next spell")
+
+    static let office = MessageStyle(
+        id: "office", name: "Office",
+        thinking: ["Circling back later", "Taking this offline",
+                   "Boiling the ocean", "Touching base soon",
+                   "Aligning on priorities", "Building the deck",
+                   "Looping in stakeholders", "Drafting a follow-up",
+                   "Blocking focus time", "Pinging for updates",
+                   "Parking this thread", "Socializing the idea"],
+        tool: ["Editing": "Redlining the doc", "Running": "Kicking off standup",
+               "Reading": "Skimming the thread", "Searching": "Digging through Slack",
+               "Browsing": "Scrolling the intranet", "Delegating": "Assigning the action item",
+               "Working": "Grinding through tickets"],
+        waiting: "Awaiting your sign-off")
+
+    static let design = MessageStyle(
+        id: "design", name: "Design",
+        thinking: ["Auditing the mood board", "Nudging by one pixel",
+                   "Chasing pixel perfection", "Renaming layers again",
+                   "Building a component", "Tweaking the spacing",
+                   "Picking a font pairing", "Duplicating the frame",
+                   "Auto-laying the stack", "Curating a palette",
+                   "Polishing the prototype", "Naming the variant"],
+        tool: ["Editing": "Adjusting the corner radius", "Running": "Exporting the assets",
+               "Reading": "Reviewing the spec", "Searching": "Hunting for icons",
+               "Browsing": "Scrolling Dribbble shots", "Delegating": "Handing off to dev",
+               "Working": "Iterating on mockups"],
+        waiting: "Ready for feedback")
+
+    static let dev = MessageStyle(
+        id: "dev", name: "Dev",
+        thinking: ["Rubber duck debugging", "Blaming the cache",
+                   "Chasing stack traces", "Googling the error",
+                   "Untangling spaghetti code", "Yak shaving again",
+                   "Bisecting commit history", "Reproducing the bug",
+                   "Silencing the linter", "Ignoring a warning",
+                   "Force-pushing to main", "Squashing old commits"],
+        tool: ["Editing": "Refactoring the function", "Running": "Compiling the project",
+               "Reading": "Reading the docs", "Searching": "Grepping the codebase",
+               "Browsing": "Browsing Stack Overflow", "Delegating": "Assigning a reviewer",
+               "Working": "Shipping the feature"],
+        waiting: "Awaiting your review")
 }

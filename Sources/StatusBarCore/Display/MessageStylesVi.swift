@@ -5,7 +5,7 @@ import Foundation
 /// the design doc's Style catalog section for the authored set.
 enum MessageStylesVi {
     static let all: [MessageStyle] = [
-        classic, rpg, gardening, dumb, scifi, cooking, pirate, harrypotter,
+        classic, rpg, gardening, dumb, scifi, cooking, pirate, harrypotter, office, design, dev,
     ]
 
     /// Total lookup: unknown id falls back to Vietnamese classic, not the
@@ -136,4 +136,49 @@ enum MessageStylesVi {
             "Working": "Dọn dẹp bằng Scourgify",
         ],
         waiting: "Chờ lệnh phù thủy")
+
+    static let office = MessageStyle(
+        id: "office", name: "Office",
+        thinking: [
+            "Họp sync nhanh", "Dời qua offline", "Canh giờ deadline", "Làm deck báo cáo",
+            "Gộp vào thread", "Đá bóng trách nhiệm", "Xin thêm deadline", "Note lại ý chính",
+            "Đợi sếp duyệt", "Trả lời email", "Block lịch làm việc", "Ping hỏi tiến độ",
+        ],
+        tool: [
+            "Editing": "Sửa lại bản nháp", "Running": "Bắt đầu họp",
+            "Reading": "Đọc lại email", "Searching": "Lục tìm trong Slack",
+            "Browsing": "Lướt tin nội bộ", "Delegating": "Giao việc cho team",
+            "Working": "Cày deadline dồn dập",
+        ],
+        waiting: "Sẵn sàng report")
+
+    static let design = MessageStyle(
+        id: "design", name: "Design",
+        thinking: [
+            "Dò mood board", "Chỉnh từng pixel", "Đặt tên layer", "Dựng component mới",
+            "Canh lại khoảng cách", "Chọn font phù hợp", "Nhân đôi frame", "Auto layout lại",
+            "Phối màu palette", "Mài prototype mượt", "Gắn tên variant", "Săm soi bố cục",
+        ],
+        tool: [
+            "Editing": "Bo góc cho tròn", "Running": "Xuất file thiết kế",
+            "Reading": "Đọc lại spec", "Searching": "Tìm icon phù hợp",
+            "Browsing": "Lướt Dribbble ngắm nghía", "Delegating": "Bàn giao cho dev",
+            "Working": "Chỉnh sửa mockup",
+        ],
+        waiting: "Chờ feedback nhé")
+
+    static let dev = MessageStyle(
+        id: "dev", name: "Dev",
+        thinking: [
+            "Debug với vịt", "Đổ lỗi cho cache", "Dò stack trace", "Google lỗi này",
+            "Gỡ rối spaghetti code", "Đào bug cũ", "Soi từng commit", "Tái hiện con bug",
+            "Dẹp cảnh báo linter", "Gộp nhánh xung đột", "Push đại lên main", "Dồn commit lại",
+        ],
+        tool: [
+            "Editing": "Viết lại hàm", "Running": "Build lại project",
+            "Reading": "Đọc tài liệu", "Searching": "Grep khắp codebase",
+            "Browsing": "Lướt Stack Overflow", "Delegating": "Gắn tag reviewer",
+            "Working": "Ship tính năng mới",
+        ],
+        waiting: "Chờ review code")
 }

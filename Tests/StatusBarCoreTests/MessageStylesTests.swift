@@ -10,10 +10,10 @@ private func wordCount(_ phrase: String) -> Int {
 }
 
 @Suite struct MessageStyleCatalogTests {
-    @Test func lineupIsEightStylesClassicFirst() {
+    @Test func lineupIsElevenStylesClassicFirst() {
         #expect(MessageStyles.all.map(\.id)
                 == ["classic", "rpg", "gardening", "dumb", "scifi", "cooking", "pirate",
-                    "harrypotter"])
+                    "harrypotter", "office", "design", "dev"])
     }
 
     @Test func idsAreUnique() {
