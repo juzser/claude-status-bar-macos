@@ -71,6 +71,10 @@ final class AppState {
         try? paths.ensureDirs()
         usageStore.loadCache()
         accounts = resolveAccounts()
+        // Re-assert the live credentials' Keychain ACL once per launch so an
+        // account that has never completed a successful switch (the only
+        // path that used to fix this) still stops re-prompting for access.
+        _ = LiveCredentialSelfHeal.run(diagnosticLog: paths.root.appendingPathComponent("native-switch.log"))
         reaggregate()
 
         watcher = DirectoryWatcher(url: paths.sessionsDir) { [weak self] in

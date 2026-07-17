@@ -1,0 +1,48 @@
+import Foundation
+
+/// Re-asserts the live `"Claude Code-credentials"` Keychain item's ACL so it
+/// trusts this app, independent of `NativeAccountSwitcher.switchTo()` ever
+/// succeeding. `LiveCredentialWriter.write`'s ACL fix (see its doc comment)
+/// used to only run as a side effect of a successful switch — an account
+/// whose only switch attempt fails (e.g. a migrated cux slot with no vault
+/// backup) never benefited from it, and kept hitting macOS's Keychain
+/// prompt on every `TokenResolution` `keychainFallback` read instead.
+///
+/// Meant to run once per app launch, not on a timer: `SecAccessCreate`
+/// builds a fresh access object on every call, and re-applying an ACL resets
+/// any "Always Allow" grant already given for it — calling this every poll
+/// cycle would trade one re-prompt problem for a smaller but still
+/// recurring one.
+public enum LiveCredentialSelfHeal {
+    public static func run(
+        diagnosticLog: URL? = nil,
+        read: () -> Data? = { LiveCredentialWriter.read() },
+        write: (Data, [String]) -> Bool = { data, paths in LiveCredentialWriter.write(data, trustedPaths: paths) },
+        trustedPaths: () -> [String] = {
+            LiveCredentialWriter.trustedPaths(thisAppPath: Bundle.main.bundlePath,
+                                              claudePath: LiveCredentialWriter.resolvedClaudePath())
+        }
+    ) -> Bool {
+        guard let data = read() else {
+            writeDiagnostic("self-heal ACL skipped: no live credentials found", to: diagnosticLog)
+            return false
+        }
+        let succeeded = write(data, trustedPaths())
+        writeDiagnostic(succeeded ? "self-heal ACL succeeded" : "self-heal ACL failed: write rejected",
+                        to: diagnosticLog)
+        return succeeded
+    }
+
+    private static func writeDiagnostic(_ message: String, to log: URL?) {
+        guard let log else { return }
+        let line = "\(Date()) \(message)\n"
+        guard let data = line.data(using: .utf8) else { return }
+        if let handle = try? FileHandle(forWritingTo: log) {
+            handle.seekToEndOfFile()
+            handle.write(data)
+            try? handle.close()
+        } else {
+            try? data.write(to: log)
+        }
+    }
+}
