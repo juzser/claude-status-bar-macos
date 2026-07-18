@@ -26,10 +26,7 @@ public actor NativeAccountSwitcher {
         writeVaultBackup: @escaping (String, CredentialBackup) -> Bool = { AccountCredentialVault.write(accountId: $0, $1) },
         readLiveCredentials: @escaping () -> Data? = { LiveCredentialWriter.read() },
         writeLiveCredentials: @escaping (Data) async -> Bool = { data in
-            let claudePath = await ClaudeBinaryLocator.shared.resolve()
-            return LiveCredentialWriter.write(data, trustedPaths: LiveCredentialWriter.trustedPaths(
-                thisAppPath: Bundle.main.bundlePath,
-                claudePath: claudePath))
+            LiveCredentialWriter.writeValue(data)
         },
         readLiveOauthBlock: @escaping () -> Data? = { NativeAccountSwitcher.defaultReadLiveOauthBlock() },
         writeLiveOauthBlock: @escaping (Data?) -> Bool = { blockData in

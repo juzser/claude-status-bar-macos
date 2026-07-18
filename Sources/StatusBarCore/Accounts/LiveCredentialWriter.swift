@@ -114,6 +114,58 @@ public enum LiveCredentialWriter {
         return add(addAttributes as CFDictionary, nil) == errSecSuccess
     }
 
+    public static func writeValue(
+        _ data: Data,
+        writer: (Data, String) -> Bool = defaultWriteValue
+    ) -> Bool {
+        writer(data, service)
+    }
+
+    public static func defaultWriteValue(data: Data, service: String) -> Bool {
+        performWriteValue(data: data, service: service, account: NSUserName())
+    }
+
+    /// Value-only update — never touches `kSecAttrAccess`, unlike
+    /// `performWrite`. Account switching only needs to change the
+    /// credential bytes; rewriting the ACL on every switch is what resets
+    /// an existing "Always Allow" grant (see `performWrite`'s doc comment).
+    /// `LiveCredentialSelfHeal` owns re-asserting the ACL, gated behind its
+    /// own non-interactive trust probe on a deliberately bounded cadence —
+    /// this path stays out of that business entirely.
+    static func performWriteValue(
+        data: Data,
+        service: String,
+        account: String,
+        update: (CFDictionary, CFDictionary) -> OSStatus = SecItemUpdate,
+        add: (CFDictionary, UnsafeMutablePointer<CFTypeRef?>?) -> OSStatus = SecItemAdd
+    ) -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrLabel as String: service,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+
+        let newAttributes: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+        ]
+
+        let updateStatus = update(query as CFDictionary, newAttributes as CFDictionary)
+        if updateStatus == errSecSuccess {
+            return true
+        }
+        guard updateStatus == errSecItemNotFound else {
+            return false
+        }
+
+        var addAttributes = query
+        for (key, value) in newAttributes {
+            addAttributes[key] = value
+        }
+        return add(addAttributes as CFDictionary, nil) == errSecSuccess
+    }
+
     /// Non-nil entries only — `claudePath` is nil when `claude`'s binary
     /// can't be resolved (see `resolvedClaudePath`), in which case the live
     /// item's ACL falls back to app-only trust.
@@ -133,5 +185,86 @@ public enum LiveCredentialWriter {
         isExecutable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
     ) -> String? {
         candidates.first(where: isExecutable)
+    }
+
+    /// Result of running a fixed-path system binary via `defaultRun`.
+    public struct ShellResult {
+        public let stdout: String
+        public let stderr: String
+        public let exitCode: Int32
+    }
+
+    /// Runs `binary arguments` directly (no shell) and captures both stdout
+    /// and stderr. Modeled on `InteractiveShellRunner.captureOutput`'s
+    /// `Process`/`Pipe`/`withCheckedContinuation` idiom, but simplified for
+    /// fixed system paths (`/usr/bin/codesign`, `/usr/bin/security`) that
+    /// need no interactive-shell PATH resolution, and with no timeout: `security
+    /// set-generic-password-partition-list` may need to block on a genuine
+    /// SecurityAgent prompt, so it must not be artificially killed.
+    public static func defaultRun(binary: String, arguments: [String]) async -> ShellResult {
+        await withCheckedContinuation { continuation in
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: binary)
+            process.arguments = arguments
+            let stdoutPipe = Pipe()
+            let stderrPipe = Pipe()
+            process.standardOutput = stdoutPipe
+            process.standardError = stderrPipe
+            process.terminationHandler = { finished in
+                let stdout = String(data: stdoutPipe.fileHandleForReading.readDataToEndOfFile(),
+                                    encoding: .utf8) ?? ""
+                let stderr = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(),
+                                    encoding: .utf8) ?? ""
+                continuation.resume(returning: ShellResult(stdout: stdout, stderr: stderr,
+                                                            exitCode: finished.terminationStatus))
+            }
+            do {
+                try process.run()
+            } catch {
+                process.terminationHandler = nil
+                continuation.resume(returning: ShellResult(stdout: "", stderr: "process.run() failed: \(error)",
+                                                            exitCode: -1))
+                return
+            }
+        }
+    }
+
+    /// `partition_id` (the `teamid:` ACL entries `set-generic-password-partition-list`
+    /// grants) is a separate authorization gate from the `SecAccess`/
+    /// `SecTrustedApplication` `applications` list `performWrite` already
+    /// sets — command-line-invoked `claude` needs this one too. Looked up
+    /// dynamically via `codesign` rather than hardcoded so a future
+    /// re-signed `claude` binary under a different team doesn't silently
+    /// break this.
+    public static func teamIdentifier(
+        forExecutableAt path: String,
+        run: (String, [String]) async -> ShellResult = defaultRun
+    ) async -> String? {
+        let result = await run("/usr/bin/codesign", ["-dv", "--verbose=4", path])
+        for line in result.stderr.split(separator: "\n", omittingEmptySubsequences: false) {
+            guard line.hasPrefix("TeamIdentifier=") else { continue }
+            let value = line.dropFirst("TeamIdentifier=".count).trimmingCharacters(in: .whitespaces)
+            return value == "not set" ? nil : value
+        }
+        return nil
+    }
+
+    /// Grants `teamID` (plus the `apple-tool:`/`apple:` markers `claude`'s
+    /// own writes use) onto the live item's `partition_id` list — the ACL
+    /// gate `SecAccessCreate` doesn't touch, see `teamIdentifier`'s doc
+    /// comment.
+    public static func setPartitionList(
+        teamID: String,
+        account: String,
+        service: String = service,
+        run: (String, [String]) async -> ShellResult = defaultRun
+    ) async -> Bool {
+        let result = await run("/usr/bin/security", [
+            "set-generic-password-partition-list",
+            "-S", "apple-tool:,apple:,teamid:\(teamID)",
+            "-s", service,
+            "-a", account,
+        ])
+        return result.exitCode == 0
     }
 }
