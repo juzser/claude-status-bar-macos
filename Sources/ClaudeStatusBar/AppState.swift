@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 import StatusBarCore
@@ -48,6 +49,10 @@ final class AppState {
     /// the first real Keychain read of a launch — see its assignment in
     /// `start()` for why that ordering matters.
     private var selfHealTask: Task<Bool, Never>?
+    /// Kept only so the observer could be removed later; nothing currently
+    /// does, matching the other loop `Task`s in `start()` which also run for
+    /// the app's lifetime with no explicit teardown.
+    private var wakeObserver: NSObjectProtocol?
 
     private let credentialsFile = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".claude/.credentials.json")
@@ -88,6 +93,22 @@ final class AppState {
         // fixing trust before that interactive-capable read can fire.
         selfHealTask = Task {
             await LiveCredentialSelfHeal.run(diagnosticLog: paths.root.appendingPathComponent("native-switch.log"))
+        }
+        // claude's own token refresh can reset the ACL mid-session (see
+        // usageInputs(_:)'s doc comment) — after a long sleep, the token is
+        // likelier to be due for refresh right as the user resumes work, and
+        // self-heal's other triggers (this launch-time run, and the one
+        // usageInputs(_:) re-runs on every call) only fire on the next poll
+        // cycle or account switch. That leaves a window, right when the user
+        // is most likely to invoke claude, where the ACL is untrusted and
+        // Keychain prompts. Waking is a sharp, cheap signal to close it early.
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            Task {
+                await LiveCredentialSelfHeal.run(diagnosticLog: self.paths.root.appendingPathComponent("native-switch.log"))
+            }
         }
         reaggregate()
 
