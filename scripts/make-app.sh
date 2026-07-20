@@ -8,7 +8,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-VERSION="${VERSION:-0.1.10}"
+VERSION="${VERSION:-0.1.11}"
 APP="dist/ClaudeStatusBar.app"
 BIN=".build/release"
 
