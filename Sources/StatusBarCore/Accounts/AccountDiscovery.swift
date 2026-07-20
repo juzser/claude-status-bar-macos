@@ -87,14 +87,33 @@ public enum AccountDiscovery {
     }
 
     public static func defaultKeychainReader(service: String) -> Data? {
+        performKeychainRead(service: service)
+    }
+
+    /// Uses `kSecUseAuthenticationUIFail` so this read can never pop an
+    /// interactive Keychain prompt — unlike `LiveCredentialWriter.read`
+    /// (self-heal's own repair path, which legitimately needs to prompt to
+    /// (re-)establish trust), this read backs the periodic usage-fetch path
+    /// and runs on every poll cycle from several independent, uncoordinated
+    /// timer loops in `AppState` (`pollTask`, `captureTask`,
+    /// `wakeObserver`). Without this, a burst of those loops firing at once
+    /// right after wake — each still needing to establish trust — could each
+    /// independently trigger their own "ClaudeStatusBar wants to access..."
+    /// dialog. `copyMatching` is injectable so tests can capture the query
+    /// without touching the real Keychain.
+    static func performKeychainRead(
+        service: String,
+        copyMatching: (CFDictionary, UnsafeMutablePointer<CFTypeRef?>?) -> OSStatus = SecItemCopyMatching
+    ) -> Data? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrLabel as String: service,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecUseAuthenticationUI as String: kSecUseAuthenticationUIFail,
         ]
         var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+        guard copyMatching(query as CFDictionary, &item) == errSecSuccess,
               let data = item as? Data else { return nil }
         return data
     }

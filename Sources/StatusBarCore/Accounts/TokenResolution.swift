@@ -2,9 +2,11 @@ import Foundation
 
 /// Which branch of the token-resolution decision produced a token — tracked
 /// so a poll cycle can log which one fired instead of just the resulting
-/// token. The Keychain-fallback branch firing unexpectedly for an account
-/// that should already have a token on disk is the leading hypothesis for
-/// the still-unexplained intermittent Keychain re-prompt.
+/// token. The Keychain-fallback branch used to be able to trigger an
+/// interactive Keychain prompt from several independent poll loops at once
+/// right after wake (see `AccountDiscovery.performKeychainRead`'s doc
+/// comment) — fixed by making that read non-interactive, but the source
+/// tracking here stays useful for spotting future regressions.
 public enum TokenSource: String, Sendable {
     case oauthFile
     case keychainFallback
@@ -52,13 +54,12 @@ public enum TokenResolution {
     }
 }
 
-/// One poll cycle's token-resolution decisions, written to give the
-/// still-unexplained intermittent Keychain re-prompt real evidence: if
-/// `tokenSource=keychainFallback` shows up here right when the prompt fires,
+/// One poll cycle's token-resolution decisions, written so future Keychain
+/// prompt reports have real evidence to check instead of a guess: if
+/// `tokenSource=keychainFallback` shows up here right when a prompt fires,
 /// and `orgUuid` is unexpectedly nil for an account that should already have
-/// one, that's a real clue instead of a guess. Never includes a token
-/// value, per this app's rule that tokens are read at request time only and
-/// never logged.
+/// one, that's a real clue. Never includes a token value, per this app's
+/// rule that tokens are read at request time only and never logged.
 public enum TokenResolutionDiagnostics {
     public struct Entry: Sendable {
         public let accountId: String
