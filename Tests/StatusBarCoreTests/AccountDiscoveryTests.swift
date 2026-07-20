@@ -1,4 +1,5 @@
 import Foundation
+import Security
 import Testing
 @testable import StatusBarCore
 
@@ -97,6 +98,33 @@ private func makeTempDir() -> URL {
         let token = AccountDiscovery.keychainAccessToken(
             service: "Claude Code-credentials", reader: { _ in Data("nope".utf8) })
         #expect(token == nil)
+    }
+}
+
+/// defaultKeychainReader must never be able to pop an interactive Keychain
+/// prompt: unlike LiveCredentialWriter.read (self-heal's own repair path,
+/// which legitimately needs to prompt to (re-)establish trust), this read
+/// backs the periodic usage-fetch path and runs on every poll cycle from
+/// several independent, uncoordinated timer loops in AppState. Without
+/// kSecUseAuthenticationUIFail, a burst of those loops firing at once right
+/// after wake can each independently trigger their own "ClaudeStatusBar
+/// wants to access..." dialog.
+@Suite struct DefaultKeychainReaderQueryTests {
+    @Test func setsAuthenticationUIFailToAvoidInteractivePrompts() {
+        var capturedQuery: [String: Any]?
+        _ = AccountDiscovery.performKeychainRead(service: "Claude Code-credentials") { query, _ in
+            capturedQuery = query as? [String: Any]
+            return errSecItemNotFound
+        }
+        let authUI = capturedQuery?[kSecUseAuthenticationUI as String] as? String
+        #expect(authUI == (kSecUseAuthenticationUIFail as String))
+    }
+
+    @Test func returnsNilWhenCopyMatchingFails() {
+        let result = AccountDiscovery.performKeychainRead(service: "Claude Code-credentials") { _, _ in
+            errSecItemNotFound
+        }
+        #expect(result == nil)
     }
 }
 
