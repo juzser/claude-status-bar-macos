@@ -120,12 +120,10 @@ public enum AccountCredentialVault {
         return (data, capturedStatus)
     }
 
-    /// Minor review finding m2: `NativeAccountSwitcher.switchTo`'s
-    /// backup-read-miss diagnostic used to just say "no backup credentials
-    /// found" with no indication of *why* — genuinely absent vs. blocked
+    /// Lets `NativeAccountSwitcher.switchTo`'s backup-read-miss diagnostic
+    /// distinguish *why* the read missed — genuinely absent vs. blocked
     /// because the process isn't trusted yet. Mirrors
-    /// `repairReadWithStatus`'s tuple-return convention so that call site can
-    /// log the real `KeychainStatus` instead of a guess.
+    /// `repairReadWithStatus`'s tuple-return convention.
     public static func readStatus(
         accountId: String,
         reader: (String, String) -> (data: Data?, status: KeychainStatus) = defaultReaderWithStatus
@@ -174,14 +172,13 @@ public enum AccountCredentialVault {
         performRepairWrite(data: data, service: service, accountId: accountId, trustedPaths: trustedPaths)
     }
 
-    /// Review finding M1: this used to be delete-then-add. If `add` failed
-    /// right after `delete` had already succeeded, the vault backup was
-    /// permanently destroyed with no rollback — worse than leaving the stale
-    /// item in place. Now update-then-add, mirroring
-    /// `LiveCredentialWriter.performWrite`'s already-correct contract: try
-    /// `update` first; fall back to `add` only when `update` reports the
-    /// item doesn't exist yet; any other update failure returns false
-    /// without ever calling `add` or touching the existing item.
+    /// Update-then-add, never delete-then-add: a failed `add` after a
+    /// successful `delete` would destroy the vault backup with no rollback,
+    /// which is worse than leaving a stale item in place. Mirrors
+    /// `LiveCredentialWriter.performWrite`'s contract — try `update` first;
+    /// fall back to `add` only when `update` reports the item doesn't exist
+    /// yet; any other update failure returns false without ever calling
+    /// `add` or touching the existing item.
     static func performRepairWrite(
         data: Data,
         service: String,

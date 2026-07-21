@@ -25,11 +25,10 @@ public actor NativeAccountSwitcher {
         stateFile: URL = AppPaths().root.appendingPathComponent("native-accounts.json"),
         diagnosticLog: URL? = AppPaths().root.appendingPathComponent("native-switch.log"),
         readVaultBackup: @escaping (String) -> CredentialBackup? = { AccountCredentialVault.read(accountId: $0) },
-        // Minor review finding m2: switchTo's backup-read-miss diagnostic
-        // used to just say "no backup credentials found" with no indication
-        // of why (genuinely absent vs. blocked because the process isn't
-        // trusted yet). Queried only on that miss path, never on the happy
-        // path, so it costs nothing when the backup read succeeds.
+        // Lets switchTo's backup-read-miss diagnostic say *why* it missed
+        // (genuinely absent vs. blocked because the process isn't trusted
+        // yet). Queried only on that miss path, never on the happy path, so
+        // it costs nothing when the backup read succeeds.
         readVaultBackupStatus: @escaping (String) -> KeychainStatus = { AccountCredentialVault.readStatus(accountId: $0) },
         writeVaultBackup: @escaping (String, CredentialBackup) -> Bool = { AccountCredentialVault.write(accountId: $0, $1) },
         // Deliberately the interactive repair read (mirrors
@@ -50,14 +49,10 @@ public actor NativeAccountSwitcher {
         saveState: @escaping (NativeAccountState, URL) -> Bool = { state, file in
             (try? NativeAccountStore.save(state, to: file)) != nil
         },
-        // Minor review finding m1: this used to default to
-        // `{ AccountVaultSelfHeal.run(accountId: $0) }` directly, which never
-        // passed `diagnosticLog` — so every switch-path vault self-heal went
-        // completely unlogged, the one thing `native-switch.log` exists to
-        // capture. `nil` here (rather than a closure default referencing
-        // `self`, which isn't available yet this early in the initializer)
-        // so the real default can be built below, closing over this
-        // initializer's own `diagnosticLog` parameter.
+        // `nil` rather than a closure default: the real default has to close
+        // over this initializer's own `diagnosticLog` parameter (otherwise
+        // switch-path vault self-heal writes nothing to `native-switch.log`),
+        // and `self` isn't available this early, so it is built below.
         vaultSelfHeal: ((String) -> Bool)? = nil
     ) {
         self.stateFile = stateFile
@@ -85,14 +80,13 @@ public actor NativeAccountSwitcher {
         // so without this an account whose backup isn't yet trusted would
         // just fail here on every switch attempt.
         //
-        // Minor review finding (accepted, not a bug): this repair read and
-        // the one below for the *outgoing* account's live credentials
-        // (`readLiveCredentials`, via `LiveCredentialWriter.repairRead`) are
-        // both interactive-capable. A single switch that hits distrust on
-        // both sides could in principle surface two prompts back to back.
-        // Left as-is: switchTo only ever runs from a user-initiated action
-        // (never a background poll), so both prompts land inside one
-        // bounded, expected user action rather than firing on a timer.
+        // This repair read and the one below for the *outgoing* account's
+        // live credentials (`readLiveCredentials`, via
+        // `LiveCredentialWriter.repairRead`) are both interactive-capable, so
+        // a switch that hits distrust on both sides can surface two prompts
+        // back to back. Accepted: switchTo only ever runs from a
+        // user-initiated action, never a background poll, so both prompts
+        // land inside one bounded, expected user action.
         _ = vaultSelfHeal(account.id)
 
         guard let backup = readVaultBackup(account.id) else {

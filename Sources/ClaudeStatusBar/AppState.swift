@@ -69,18 +69,15 @@ final class AppState {
     private var screenUnlockObserver: NSObjectProtocol?
     /// Whether this launch's one *interactive* `LiveCredentialSelfHeal`
     /// attempt has already been spent — see `attemptLiveCredentialSelfHeal()`.
-    /// Review finding C1: without this, `run()`'s only gate was the
-    /// non-interactive `isTrusted` probe, so every call site below
-    /// (launch, wake, unlock, every `usageInputs(_:)` cycle) would retry the
-    /// *interactive* repair read on every single call whenever trust can't be
-    /// established — a prompt storm, not a fix.
+    /// `run()`'s own `isTrusted` probe is non-interactive and can keep
+    /// failing indefinitely, so without this gate every call site (launch,
+    /// wake, unlock, every `usageInputs(_:)` cycle) would retry the
+    /// *interactive* repair read forever — a prompt storm, not a fix.
     ///
-    /// Minor review finding: `ClaudeStatusBar` is an untested executable
-    /// target (only `StatusBarCore` runs under `swift test`), so this gate
-    /// and the three call sites that share it are verified via
-    /// `LiveCredentialSelfHeal`'s own `StatusBarCoreTests` coverage of the
-    /// `allowInteractive` contract plus `swift build` + manual exercise, not
-    /// an automated test of `AppState` itself.
+    /// `ClaudeStatusBar` is an untested executable target (only
+    /// `StatusBarCore` runs under `swift test`), so this gate and the call
+    /// sites sharing it are covered indirectly, via `LiveCredentialSelfHeal`'s
+    /// `allowInteractive` tests plus `swift build` and manual exercise.
     private var liveCredentialSelfHealAttempted = false
 
     private let credentialsFile = FileManager.default.homeDirectoryForCurrentUser
@@ -387,10 +384,10 @@ final class AppState {
 
     /// Spends this launch's one *interactive* `LiveCredentialSelfHeal`
     /// attempt, if it hasn't been spent already — the caller-owned gate that
-    /// `LiveCredentialSelfHeal.run`'s own doc comment (review finding C1)
-    /// says it needs, since its non-interactive `isTrusted` probe alone
-    /// doesn't stop every call site below from retrying the *interactive*
-    /// repair read forever under persistent distrust.
+    /// `LiveCredentialSelfHeal.run`'s own doc comment says it needs, since
+    /// its non-interactive `isTrusted` probe alone doesn't stop every call
+    /// site below from retrying the *interactive* repair read forever under
+    /// persistent distrust.
     ///
     /// Checked-and-set with no `await` between them, mirroring
     /// `refreshUsageIfNeeded()`'s `refreshInFlight` guard above: `start()`'s
@@ -435,23 +432,19 @@ final class AppState {
     /// `attemptLiveCredentialSelfHeal()` only lets *one* of those calls
     /// (whichever gets there first this launch — here or an observer) run
     /// the actual *interactive* repair read; every other call, from here or
-    /// anywhere else, only gets the non-interactive `isTrusted` probe (see
-    /// review finding C1). A poll cycle that hits distrust after the one
-    /// attempt is spent still surfaces the resulting non-interactive
-    /// Keychain failure the same way it always did — it just won't itself
-    /// pop a permission dialog to fix it.
+    /// anywhere else, only gets the non-interactive `isTrusted` probe. A poll
+    /// cycle that hits distrust after the one attempt is spent still surfaces
+    /// the resulting non-interactive Keychain failure the same way it always
+    /// did — it just won't itself pop a permission dialog to fix it.
     ///
-    /// Per-account vault self-heal (finding #2's proactive half) used to run
-    /// here too, once per inactive account per launch. Removed per review
-    /// finding M2: this function runs on `@MainActor` from the background
-    /// poll timer, and vault self-heal's repair read is interactive — with N
-    /// untrusted inactive accounts that was N sequential blocking prompts
-    /// fired by a timer, not a user action. `NativeAccountSwitcher.switchTo`
-    /// already does the same repair on its own vault read before every
-    /// user-initiated switch (see its doc comment), which is sufficient and
-    /// always user-initiated; an inactive account's usage may simply not
-    /// resolve from the vault until the user switches to it at least once
-    /// per launch, which is the accepted tradeoff.
+    /// Per-account vault self-heal deliberately does *not* run here: this
+    /// function runs on `@MainActor` from the background poll timer, and
+    /// vault self-heal's repair read is interactive — with N untrusted
+    /// inactive accounts that would be N sequential blocking prompts fired by
+    /// a timer rather than a user action. `NativeAccountSwitcher.switchTo`
+    /// does that repair before every user-initiated switch (see its doc
+    /// comment) instead. Tradeoff: an inactive account's usage may not
+    /// resolve from the vault until the user switches to it once per launch.
     private func usageInputs(
         _ accounts: [Account]
     ) async -> [(account: Account, token: String?)] {
