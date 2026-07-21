@@ -41,8 +41,13 @@ final class AppState {
     /// isn't installed). Drives the UI's subtle backend indicator.
     private(set) var slayerBinaryPath: String?
     var usingSlayerBackend: Bool { slayerBinaryPath != nil }
-    /// Message from the most recent failed slayer read (list/status/sessions)
-    /// — surfaced as a small footer in Settings; nil once a call succeeds.
+    /// Message from the most recent failed slayer `list`/`status` read —
+    /// surfaced as a small footer in Settings; nil once a call succeeds. A
+    /// `sessions` failure does *not* set this: it only backs the secondary
+    /// billed-account annotation on session rows (see
+    /// `refreshSessionAnnotations(binaryPath:)`), so it fails silently and
+    /// leaves any prior annotations in place rather than raising a footer
+    /// error for a feature that's cosmetic to begin with.
     private(set) var slayerErrorMessage: String?
     /// account id -> slayer `name`, the only stable switch target (`index`
     /// is documented as unstable) — populated on every successful
@@ -105,7 +110,20 @@ final class AppState {
         started = true
         try? paths.ensureDirs()
         usageStore.loadCache()
-        accounts = resolveAccounts()
+        // Native discovery is skipped up front when the setting says slayer
+        // mode will own this session — avoids both an unnecessary native
+        // Keychain-adjacent read and the cosmetic flash of native accounts
+        // in the popover before the first refreshFromSlayer lands. Only the
+        // synchronous half of "is slayer active" is checked here (the
+        // setting) since start() itself must stay synchronous and full
+        // resolution needs an await; if the setting's on but the binary
+        // then fails to resolve, refreshUsage(live:)'s native branch
+        // re-seeds `accounts` itself moments later (the very next Task,
+        // scheduled by .onAppear right after start() returns) — nothing is
+        // lost by not seeding it here too.
+        if !settings.useTokenSlayer {
+            accounts = resolveAccounts()
+        }
         // Re-assert the live credentials' Keychain ACL once per launch so an
         // account that has never completed a successful switch (the only
         // path that used to fix this) still stops re-prompting for access.
@@ -120,8 +138,16 @@ final class AppState {
         // ordering guarantee — usageInputs(_:) awaits selfHealTask so the
         // fast, non-interactive ACL re-assertion always gets first crack at
         // fixing trust before that interactive-capable read can fire.
+        //
+        // Gated *inside* the Task body, not before creating it: the full
+        // "will slayer own this session" check needs the async binary
+        // resolution, which can only happen once we're already off the
+        // synchronous start() call stack. Skipped entirely when it resolves
+        // — self-heal is a native-Keychain-ACL concern with nothing to fix
+        // when token-slayer is doing the talking instead.
         selfHealTask = Task {
-            await LiveCredentialSelfHeal.run(diagnosticLog: paths.root.appendingPathComponent("native-switch.log"))
+            guard await self.resolveSlayerBinaryIfEnabled() == nil else { return true }
+            return await LiveCredentialSelfHeal.run(diagnosticLog: self.paths.root.appendingPathComponent("native-switch.log"))
         }
         // claude's own token refresh can reset the ACL mid-session (see
         // usageInputs(_:)'s doc comment) — after a long sleep, the token is
@@ -136,7 +162,11 @@ final class AppState {
         ) { [weak self] _ in
             guard let self else { return }
             Task {
-                _ = await LiveCredentialSelfHeal.run(diagnosticLog: self.paths.root.appendingPathComponent("native-switch.log"))
+                // Same slayer-mode gate as the launch-time self-heal above:
+                // nothing native to re-trust when token-slayer is active.
+                if await self.resolveSlayerBinaryIfEnabled() == nil {
+                    _ = await LiveCredentialSelfHeal.run(diagnosticLog: self.paths.root.appendingPathComponent("native-switch.log"))
+                }
                 // Waking is also a sharp signal that usage data may be
                 // stale (the poll loop paused for the whole sleep). Throttled
                 // like the popover-open trigger — see refreshUsageIfNeeded().
@@ -294,14 +324,24 @@ final class AppState {
         switch await tokenSlayerCLI.listAccounts(binaryPath: binaryPath, live: live) {
         case .success(let doc):
             slayerErrorMessage = nil
-            accounts = doc.accounts.map(TokenSlayerMapping.account(from:))
+            // Deduped first: two slots can share a `uuid` (e.g. an account
+            // re-added under a new name while the old slot still exists),
+            // and `Dictionary(uniqueKeysWithValues:)` traps on a duplicate
+            // key — see TokenSlayerMapping.dedupedById's doc comment.
+            let deduped = TokenSlayerMapping.dedupedById(doc.accounts)
+            accounts = deduped.map(TokenSlayerMapping.account(from:))
             slayerAccountNames = Dictionary(
-                uniqueKeysWithValues: doc.accounts.map { (TokenSlayerMapping.accountId(for: $0), $0.name) })
+                uniqueKeysWithValues: deduped.map { (TokenSlayerMapping.accountId(for: $0), $0.name) })
             let states = Dictionary(
-                uniqueKeysWithValues: doc.accounts.map { (TokenSlayerMapping.accountId(for: $0), TokenSlayerMapping.usageState(from: $0)) })
+                uniqueKeysWithValues: deduped.map { (TokenSlayerMapping.accountId(for: $0), TokenSlayerMapping.usageState(from: $0)) })
             usageStore.apply(externalStates: states)
         case .failure(let error):
             slayerErrorMessage = Self.message(for: error)
+            // Dim the previously-fetched rows rather than leaving them
+            // looking fresh forever — mirrors the native failure branch in
+            // UsageStore.refresh(accounts:), which marks a lost connection
+            // `.stale` the same way.
+            usageStore.markStale(Array(slayerAccountNames.keys))
         }
     }
 
@@ -360,7 +400,16 @@ final class AppState {
     func switchAccount(_ account: Account) async {
         guard account.slot != nil else { return }
         if let binaryPath = await resolveSlayerBinaryIfEnabled() {
-            guard let target = slayerAccountNames[account.id] else { return }
+            guard let target = slayerAccountNames[account.id] else {
+                // Reachable right after launch (before the first
+                // refreshFromSlayer lands) or right after toggling the
+                // setting on (accounts still holds a stale native/empty
+                // list). Surface it rather than silently no-op, so the
+                // user sees *something* happened.
+                switchFailedAccountId = account.id
+                switchFailedMessage = "Account list not yet loaded from token-slayer — try again in a moment"
+                return
+            }
             switch await tokenSlayerCLI.switchAccount(target: target, binaryPath: binaryPath) {
             case .success:
                 switchFailedAccountId = nil
@@ -387,7 +436,10 @@ final class AppState {
     /// ticker started in `start()`).
     func beginAddAccount() async {
         if let binaryPath = await resolveSlayerBinaryIfEnabled() {
-            TerminalLauncher.run("\(binaryPath) tui")
+            // Single-quoted: TerminalLauncher writes this verbatim as a line
+            // in a zsh script, and an install path containing a space would
+            // otherwise split into a bogus extra argument.
+            TerminalLauncher.run("'\(binaryPath)' tui")
             return
         }
         await accountCapture.beginCapture()
@@ -409,7 +461,10 @@ final class AppState {
     /// `needsRelogin` against credentials that were never actually renewed.
     func beginRelogin(_ account: Account) async {
         if let binaryPath = await resolveSlayerBinaryIfEnabled() {
-            TerminalLauncher.run("\(binaryPath) tui")
+            // Single-quoted: TerminalLauncher writes this verbatim as a line
+            // in a zsh script, and an install path containing a space would
+            // otherwise split into a bogus extra argument.
+            TerminalLauncher.run("'\(binaryPath)' tui")
             return
         }
         await switchAccount(account)
