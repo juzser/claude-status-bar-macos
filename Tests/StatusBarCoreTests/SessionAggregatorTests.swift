@@ -41,6 +41,101 @@ private func record(id: String, state: SessionState, startedAt: Date,
         #expect(SessionAggregator.loadSessions(from: dir, now: now).isEmpty)
     }
 
+    @Test func missingDirectoryPruneIsNoOp() {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("missing-\(UUID().uuidString)", isDirectory: true)
+        #expect(SessionAggregator.loadSessions(from: dir, now: Date()).isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: dir.path))
+    }
+
+    @Test func prunesRecordFileOlderThanRetention() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("prune-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let now = Date()
+
+        let old = record(id: "old", state: .idle,
+                         startedAt: now.addingTimeInterval(-SessionAggregator.pruneAfter - 3600),
+                         updatedAt: now.addingTimeInterval(-SessionAggregator.pruneAfter - 3600))
+        let url = dir.appendingPathComponent("old.json")
+        try AtomicFile.write(old.encoded(), to: url)
+
+        _ = SessionAggregator.loadSessions(from: dir, now: now)
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+    }
+
+    @Test func keepsFreshRecordFile() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("prune-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let now = Date()
+
+        let fresh = record(id: "fresh", state: .idle,
+                           startedAt: now.addingTimeInterval(-60),
+                           updatedAt: now.addingTimeInterval(-60))
+        let url = dir.appendingPathComponent("fresh.json")
+        try AtomicFile.write(fresh.encoded(), to: url)
+
+        _ = SessionAggregator.loadSessions(from: dir, now: now)
+        #expect(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    @Test func prunesMalformedFileOlderThanRetentionByMtime() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("prune-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let now = Date()
+
+        let url = dir.appendingPathComponent("bad.json")
+        try AtomicFile.write(Data("broken".utf8), to: url)
+        let oldMtime = now.addingTimeInterval(-SessionAggregator.pruneAfter - 3600)
+        try FileManager.default.setAttributes([.modificationDate: oldMtime], ofItemAtPath: url.path)
+
+        _ = SessionAggregator.loadSessions(from: dir, now: now)
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+    }
+
+    @Test func pruneRetentionExceedsStaleWindow() {
+        // Pruning's correctness argument is that it only ever deletes records
+        // already excluded from the UI by `staleAfter` — that silently breaks
+        // if someone retunes either constant so this ordering no longer holds.
+        #expect(SessionAggregator.pruneAfter > SessionAggregator.staleAfter)
+    }
+
+    @Test func hiddenButNotYetPrunedRecordSurvivesOnDisk() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("prune-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let now = Date()
+
+        // Older than staleAfter (hidden from the returned list) but within
+        // pruneAfter (not yet deleted) — this band must survive on disk.
+        let age = (SessionAggregator.staleAfter + SessionAggregator.pruneAfter) / 2
+        let hidden = record(id: "hidden", state: .idle,
+                            startedAt: now.addingTimeInterval(-age),
+                            updatedAt: now.addingTimeInterval(-age))
+        let url = dir.appendingPathComponent("hidden.json")
+        try AtomicFile.write(hidden.encoded(), to: url)
+
+        let sessions = SessionAggregator.loadSessions(from: dir, now: now)
+        #expect(sessions.isEmpty)
+        #expect(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    @Test func keepsFreshMalformedFile() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("prune-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let now = Date()
+
+        // mtime defaults to "now" (just written) — recent, might be mid-write.
+        let url = dir.appendingPathComponent("bad.json")
+        try AtomicFile.write(Data("broken".utf8), to: url)
+
+        _ = SessionAggregator.loadSessions(from: dir, now: now)
+        #expect(FileManager.default.fileExists(atPath: url.path))
+    }
+
     @Test func displayStatePicksByPriority() {
         let idle = record(id: "a", state: .idle, startedAt: now, updatedAt: now)
         let thinking = record(id: "b", state: .thinking, startedAt: now, updatedAt: now)
