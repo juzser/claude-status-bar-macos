@@ -26,12 +26,38 @@ final class AppState {
     /// Set when `switchAccount` fails, cleared on the next attempt that
     /// succeeds — surfaced as an inline warning next to the account's row.
     private(set) var switchFailedAccountId: String?
+    /// Stderr text from the most recent failed slayer-mode switch, paired
+    /// with `switchFailedAccountId`. Nil for a native-mode failure — the UI
+    /// falls back to its existing generic message in that case.
+    private(set) var switchFailedMessage: String?
     /// 1 Hz heartbeat for the menu bar elapsed counter; advances only while busy.
     private(set) var tick = Date()
     private(set) var updateAvailable: ReleaseInfo?
     let usageStore: UsageStore
     let paths: AppPaths
 
+    /// Cached resolved path once `useTokenSlayer` is on and the binary
+    /// exists — nil means native mode is active (setting off, or the CLI
+    /// isn't installed). Drives the UI's subtle backend indicator.
+    private(set) var slayerBinaryPath: String?
+    var usingSlayerBackend: Bool { slayerBinaryPath != nil }
+    /// Message from the most recent failed slayer `list`/`status` read —
+    /// surfaced as a small footer in Settings; nil once a call succeeds. A
+    /// `sessions` failure does *not* set this: it only backs the secondary
+    /// billed-account annotation on session rows (see
+    /// `refreshSessionAnnotations(binaryPath:)`), so it fails silently and
+    /// leaves any prior annotations in place rather than raising a footer
+    /// error for a feature that's cosmetic to begin with.
+    private(set) var slayerErrorMessage: String?
+    /// account id -> slayer `name`, the only stable switch target (`index`
+    /// is documented as unstable) — populated on every successful
+    /// `refreshFromSlayer`.
+    private var slayerAccountNames: [String: String] = [:]
+    /// sessionId -> token-slayer `billed_account`, joined onto hook-based
+    /// session rows as a secondary annotation. Empty outside slayer mode.
+    private(set) var sessionBilledAccounts: [String: String] = [:]
+
+    private let tokenSlayerCLI = TokenSlayerCLI.shared
     private let nativeAccountSwitcher = NativeAccountSwitcher()
     private let accountCapture: AccountCapture
     private let updateChecker = UpdateChecker()
@@ -84,7 +110,20 @@ final class AppState {
         started = true
         try? paths.ensureDirs()
         usageStore.loadCache()
-        accounts = resolveAccounts()
+        // Native discovery is skipped up front when the setting says slayer
+        // mode will own this session — avoids both an unnecessary native
+        // Keychain-adjacent read and the cosmetic flash of native accounts
+        // in the popover before the first refreshFromSlayer lands. Only the
+        // synchronous half of "is slayer active" is checked here (the
+        // setting) since start() itself must stay synchronous and full
+        // resolution needs an await; if the setting's on but the binary
+        // then fails to resolve, refreshUsage(live:)'s native branch
+        // re-seeds `accounts` itself moments later (the very next Task,
+        // scheduled by .onAppear right after start() returns) — nothing is
+        // lost by not seeding it here too.
+        if !settings.useTokenSlayer {
+            accounts = resolveAccounts()
+        }
         // Re-assert the live credentials' Keychain ACL once per launch so an
         // account that has never completed a successful switch (the only
         // path that used to fix this) still stops re-prompting for access.
@@ -99,8 +138,16 @@ final class AppState {
         // ordering guarantee — usageInputs(_:) awaits selfHealTask so the
         // fast, non-interactive ACL re-assertion always gets first crack at
         // fixing trust before that interactive-capable read can fire.
+        //
+        // Gated *inside* the Task body, not before creating it: the full
+        // "will slayer own this session" check needs the async binary
+        // resolution, which can only happen once we're already off the
+        // synchronous start() call stack. Skipped entirely when it resolves
+        // — self-heal is a native-Keychain-ACL concern with nothing to fix
+        // when token-slayer is doing the talking instead.
         selfHealTask = Task {
-            await LiveCredentialSelfHeal.run(diagnosticLog: paths.root.appendingPathComponent("native-switch.log"))
+            guard await self.resolveSlayerBinaryIfEnabled() == nil else { return true }
+            return await LiveCredentialSelfHeal.run(diagnosticLog: self.paths.root.appendingPathComponent("native-switch.log"))
         }
         // claude's own token refresh can reset the ACL mid-session (see
         // usageInputs(_:)'s doc comment) — after a long sleep, the token is
@@ -115,7 +162,11 @@ final class AppState {
         ) { [weak self] _ in
             guard let self else { return }
             Task {
-                _ = await LiveCredentialSelfHeal.run(diagnosticLog: self.paths.root.appendingPathComponent("native-switch.log"))
+                // Same slayer-mode gate as the launch-time self-heal above:
+                // nothing native to re-trust when token-slayer is active.
+                if await self.resolveSlayerBinaryIfEnabled() == nil {
+                    _ = await LiveCredentialSelfHeal.run(diagnosticLog: self.paths.root.appendingPathComponent("native-switch.log"))
+                }
                 // Waking is also a sharp signal that usage data may be
                 // stale (the poll loop paused for the whole sleep). Throttled
                 // like the popover-open trigger — see refreshUsageIfNeeded().
@@ -235,8 +286,71 @@ final class AppState {
     }
 
     func refreshUsageNow() async {
+        await refreshUsage(live: true)
+    }
+
+    /// Backend-branching core of `refreshUsageNow()`/`refreshUsageIfNeeded()`.
+    /// `live` only matters in slayer mode (`status --json` vs. cached
+    /// `list --json`, per the CLI's own cadence guidance) — native mode has
+    /// no such distinction and ignores it, so its behavior is unchanged.
+    private func refreshUsage(live: Bool) async {
+        if let binaryPath = await resolveSlayerBinaryIfEnabled() {
+            await refreshFromSlayer(binaryPath: binaryPath, live: live)
+            return
+        }
         accounts = resolveAccounts()
         await usageStore.refresh(accounts: await usageInputs(accounts))
+    }
+
+    /// Slayer-mode setting check + cached binary resolution in one place —
+    /// every entry point that might talk to token-slayer calls this first so
+    /// `slayerBinaryPath`/`usingSlayerBackend` (the UI's backend indicator)
+    /// always reflects the most recent check.
+    private func resolveSlayerBinaryIfEnabled() async -> String? {
+        guard settings.useTokenSlayer else {
+            slayerBinaryPath = nil
+            return nil
+        }
+        let path = await tokenSlayerCLI.resolveBinary()
+        slayerBinaryPath = path
+        return path
+    }
+
+    /// Fetches accounts/usage from token-slayer and injects them, bypassing
+    /// every native path (Keychain reads, `TokenResolution`, direct
+    /// api.anthropic.com fetches) entirely — the "zero native I/O in slayer
+    /// mode" requirement.
+    private func refreshFromSlayer(binaryPath: String, live: Bool) async {
+        switch await tokenSlayerCLI.listAccounts(binaryPath: binaryPath, live: live) {
+        case .success(let doc):
+            slayerErrorMessage = nil
+            // Deduped first: two slots can share a `uuid` (e.g. an account
+            // re-added under a new name while the old slot still exists),
+            // and `Dictionary(uniqueKeysWithValues:)` traps on a duplicate
+            // key — see TokenSlayerMapping.dedupedById's doc comment.
+            let deduped = TokenSlayerMapping.dedupedById(doc.accounts)
+            accounts = deduped.map(TokenSlayerMapping.account(from:))
+            slayerAccountNames = Dictionary(
+                uniqueKeysWithValues: deduped.map { (TokenSlayerMapping.accountId(for: $0), $0.name) })
+            let states = Dictionary(
+                uniqueKeysWithValues: deduped.map { (TokenSlayerMapping.accountId(for: $0), TokenSlayerMapping.usageState(from: $0)) })
+            usageStore.apply(externalStates: states)
+        case .failure(let error):
+            slayerErrorMessage = Self.message(for: error)
+            // Dim the previously-fetched rows rather than leaving them
+            // looking fresh forever — mirrors the native failure branch in
+            // UsageStore.refresh(accounts:), which marks a lost connection
+            // `.stale` the same way.
+            usageStore.markStale(Array(slayerAccountNames.keys))
+        }
+    }
+
+    private static func message(for error: TokenSlayerError) -> String {
+        switch error {
+        case .binaryNotFound: return "token-slayer binary not found"
+        case .invalidOutput: return "token-slayer returned unexpected output"
+        case .commandFailed(let message): return message
+        }
     }
 
     /// Popover-open and wake-from-sleep both call this instead of
@@ -258,7 +372,9 @@ final class AppState {
         guard !refreshInFlight, usageStore.shouldRefresh() else { return }
         refreshInFlight = true
         defer { refreshInFlight = false }
-        await refreshUsageNow()
+        // Popover-open/wake want the cached, fast `list --json` in slayer
+        // mode — the poll loop is what earns a live `status --json`.
+        await refreshUsage(live: false)
     }
 
     private func resolveAccounts() -> [Account] {
@@ -272,23 +388,60 @@ final class AppState {
         return NativeAccountStore.toAccounts(nativeState)
     }
 
-    /// Switches the active account via NativeAccountSwitcher, then
-    /// re-resolves accounts and refreshes usage so isActive/usage bars
-    /// reflect the switch immediately. No-op for the plain default account
-    /// (slot == nil) — it has nothing to switch to, and the UI never shows
-    /// a Switch button for it (see AccountsSection.swift).
+    /// Switches the active account. In slayer mode this runs `token-slayer
+    /// switch <name>` (never `force-switch`) and, on success, re-runs the
+    /// cached `list --json` per the contract; on failure the CLI's own
+    /// stderr is surfaced verbatim rather than the generic native message.
+    /// Native mode is unchanged: NativeAccountSwitcher, then a full usage
+    /// refresh so isActive/usage bars reflect the switch immediately. No-op
+    /// for the plain default account (slot == nil) — it has nothing to
+    /// switch to, and the UI never shows a Switch button for it (see
+    /// AccountsSection.swift).
     func switchAccount(_ account: Account) async {
         guard account.slot != nil else { return }
+        if let binaryPath = await resolveSlayerBinaryIfEnabled() {
+            guard let target = slayerAccountNames[account.id] else {
+                // Reachable right after launch (before the first
+                // refreshFromSlayer lands) or right after toggling the
+                // setting on (accounts still holds a stale native/empty
+                // list). Surface it rather than silently no-op, so the
+                // user sees *something* happened.
+                switchFailedAccountId = account.id
+                switchFailedMessage = "Account list not yet loaded from token-slayer — try again in a moment"
+                return
+            }
+            switch await tokenSlayerCLI.switchAccount(target: target, binaryPath: binaryPath) {
+            case .success:
+                switchFailedAccountId = nil
+                switchFailedMessage = nil
+            case .failure(let error):
+                switchFailedAccountId = account.id
+                switchFailedMessage = Self.message(for: error)
+            }
+            await refreshFromSlayer(binaryPath: binaryPath, live: false)
+            return
+        }
         let succeeded = await nativeAccountSwitcher.switchTo(account: account)
         switchFailedAccountId = succeeded ? nil : account.id
+        switchFailedMessage = nil
         await refreshUsageNow()
     }
 
-    /// Snapshots the currently-live credentials as the pre-login baseline,
-    /// then launches `claude /login` in Terminal. The resulting new login
-    /// is picked up by `recheckReloginAccounts()` (popover-open + the
-    /// ~60s captureTask ticker started in `start()`).
+    /// Slayer mode: launches `token-slayer tui` in Terminal — it owns its
+    /// own add-account/login flow, so none of the native capture machinery
+    /// below applies. Native mode is unchanged: snapshots the currently-live
+    /// credentials as the pre-login baseline, then launches `claude /login`
+    /// in Terminal. The resulting new login is picked up by
+    /// `recheckReloginAccounts()` (popover-open + the ~60s captureTask
+    /// ticker started in `start()`).
     func beginAddAccount() async {
+        if let binaryPath = await resolveSlayerBinaryIfEnabled() {
+            // Single-quoted: TerminalLauncher writes this verbatim as a line
+            // in a zsh script, and an install path containing a space would
+            // otherwise split into a bogus extra argument.
+            TerminalLauncher.run("'\(binaryPath)' tui")
+            return
+        }
         await accountCapture.beginCapture()
         TerminalLauncher.run("claude /login")
     }
@@ -307,6 +460,13 @@ final class AppState {
     /// so the ~60s captureTask ticker or a popover reopen could clear
     /// `needsRelogin` against credentials that were never actually renewed.
     func beginRelogin(_ account: Account) async {
+        if let binaryPath = await resolveSlayerBinaryIfEnabled() {
+            // Single-quoted: TerminalLauncher writes this verbatim as a line
+            // in a zsh script, and an install path containing a space would
+            // otherwise split into a bogus extra argument.
+            TerminalLauncher.run("'\(binaryPath)' tui")
+            return
+        }
         await switchAccount(account)
         await accountCapture.beginCapture()
         TerminalLauncher.run("claude /login")
@@ -315,14 +475,36 @@ final class AppState {
     /// Re-fetches only accounts flagged needs-relogin. Runs when the popover
     /// opens: after the user logs back in, the poll loop's failure backoff
     /// (every 8th cycle at 3+ failures) would otherwise keep the stale badge
-    /// up for the better part of an hour.
+    /// up for the better part of an hour. No-op in slayer mode: there's no
+    /// native capture baseline to check, and `refreshUsageIfNeeded()`'s own
+    /// popover-open `list --json` call already keeps `needsRelogin` current.
     func recheckReloginAccounts() async {
+        guard await resolveSlayerBinaryIfEnabled() == nil else { return }
         if case .captured = await accountCapture.checkForNewLogin() {
             await refreshUsageNow()
         }
         let flagged = accounts.filter { usageStore.states[$0.id]?.needsRelogin == true }
         guard !flagged.isEmpty else { return }
         await usageStore.refresh(accounts: await usageInputs(flagged))
+    }
+
+    /// Fetches `sessions --json` and joins `billed_account` onto hook-based
+    /// session rows by `session_id` — a small secondary annotation, not a
+    /// replacement for the hook data. Called on popover open; the poll loop
+    /// calls the `binaryPath:` overload directly since it's already resolved
+    /// one. Clears to empty outside slayer mode so a toggle-off doesn't leave
+    /// stale annotations on screen.
+    func refreshSessionAnnotations() async {
+        guard let binaryPath = await resolveSlayerBinaryIfEnabled() else {
+            sessionBilledAccounts = [:]
+            return
+        }
+        await refreshSessionAnnotations(binaryPath: binaryPath)
+    }
+
+    private func refreshSessionAnnotations(binaryPath: String) async {
+        guard case .success(let doc) = await tokenSlayerCLI.sessions(binaryPath: binaryPath) else { return }
+        sessionBilledAccounts = SlayerSessionJoin.billedAccounts(from: doc.sessions)
     }
 
     var labelModel: MenuBarLabelModel {
@@ -336,7 +518,16 @@ final class AppState {
                                  now: tick)
     }
 
+    /// Poll-cadence entry point. Slayer mode: one `status --json` call
+    /// covers every account (no per-account backoff — that's a native-only
+    /// concept for the per-account network fetcher), plus a `sessions --json`
+    /// refresh for the billed-account annotation. Native mode is unchanged.
     private func pollOnce() async {
+        if let binaryPath = await resolveSlayerBinaryIfEnabled() {
+            await refreshFromSlayer(binaryPath: binaryPath, live: true)
+            await refreshSessionAnnotations(binaryPath: binaryPath)
+            return
+        }
         accounts = resolveAccounts()
         let cycle = pollCycle
         pollCycle += 1
