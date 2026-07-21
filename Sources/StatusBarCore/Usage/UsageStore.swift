@@ -24,6 +24,12 @@ public final class UsageStore {
     let fetcher: UsageFetching
     let cacheFile: URL
     public private(set) var states: [String: AccountUsageState] = [:]
+    /// Set only when `refresh(accounts:)` fetches at least one account
+    /// successfully — a call that only produced failures leaves this
+    /// untouched, so `shouldRefresh` never treats a failed attempt as a
+    /// reason to withhold a retry. Backs the popover-open / wake-from-sleep
+    /// throttle in `AppState` (see `shouldRefresh(now:minGap:)`).
+    public private(set) var lastSuccessfulRefreshAt: Date?
 
     public init(fetcher: UsageFetching, cacheFile: URL) {
         self.fetcher = fetcher
@@ -40,7 +46,7 @@ public final class UsageStore {
         return cycle % interval != 0
     }
 
-    public func refresh(accounts: [(account: Account, token: String?)]) async {
+    public func refresh(accounts: [(account: Account, token: String?)], now: Date = Date()) async {
         let fetcher = self.fetcher
         let fetched = await withTaskGroup(
             of: (String, Result<UsageSnapshot, UsageError>).self
@@ -64,12 +70,14 @@ public final class UsageStore {
             return collected
         }
 
+        var hadSuccess = false
         for (account, token) in accounts {
             let id = account.id
             var state = states[id] ?? AccountUsageState()
             switch token.flatMap({ _ in fetched[id] }) {
             case .success(let snapshot):
                 state = AccountUsageState(snapshot: snapshot, freshness: .fresh)
+                hadSuccess = true
             case .failure(.unauthorized):
                 state.freshness = .stale
                 state.needsRelogin = true
@@ -91,7 +99,19 @@ public final class UsageStore {
             }
             states[id] = state
         }
+        if hadSuccess { lastSuccessfulRefreshAt = now }
         saveCache()
+    }
+
+    /// Whether a caller (popover-open, wake-from-sleep) should trigger
+    /// `refresh(accounts:)` right now, or skip because usage data is still
+    /// recent enough — throttles those two triggers to at most once every
+    /// `minGap` seconds so repeatedly opening the popover doesn't hammer the
+    /// API. A failed refresh doesn't set `lastSuccessfulRefreshAt`, so it
+    /// never blocks a retry.
+    public func shouldRefresh(now: Date = Date(), minGap: TimeInterval = 30) -> Bool {
+        guard let last = lastSuccessfulRefreshAt else { return true }
+        return now.timeIntervalSince(last) >= minGap
     }
 
     /// Marks the given account ids as needing relogin, without disturbing

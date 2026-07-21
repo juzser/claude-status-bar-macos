@@ -107,7 +107,11 @@ final class AppState {
         ) { [weak self] _ in
             guard let self else { return }
             Task {
-                await LiveCredentialSelfHeal.run(diagnosticLog: self.paths.root.appendingPathComponent("native-switch.log"))
+                _ = await LiveCredentialSelfHeal.run(diagnosticLog: self.paths.root.appendingPathComponent("native-switch.log"))
+                // Waking is also a sharp signal that usage data may be
+                // stale (the poll loop paused for the whole sleep). Throttled
+                // like the popover-open trigger — see refreshUsageIfNeeded().
+                await self.refreshUsageIfNeeded()
             }
         }
         reaggregate()
@@ -225,6 +229,19 @@ final class AppState {
     func refreshUsageNow() async {
         accounts = resolveAccounts()
         await usageStore.refresh(accounts: await usageInputs(accounts))
+    }
+
+    /// Popover-open and wake-from-sleep both call this instead of
+    /// `refreshUsageNow()` directly: it skips the refresh when
+    /// `UsageStore.shouldRefresh` says the last successful fetch is still
+    /// recent, so neither trigger can hammer the API by firing repeatedly
+    /// (popover reopened, laptop waking in quick succession). The throttle
+    /// window itself is decided in StatusBarCore (testable); a throttled-in
+    /// call still goes through the normal `refreshUsageNow()` path, so the
+    /// existing per-account failure backoff still applies.
+    func refreshUsageIfNeeded() async {
+        guard usageStore.shouldRefresh() else { return }
+        await refreshUsageNow()
     }
 
     private func resolveAccounts() -> [Account] {

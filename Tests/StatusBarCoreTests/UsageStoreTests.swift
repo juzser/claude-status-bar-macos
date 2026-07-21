@@ -175,4 +175,41 @@ private func makeStore(_ results: [String: Result<UsageSnapshot, UsageError>]) -
         store.seedNeedsRelogin(["native-0"])
         #expect(store.states["native-0"]?.needsRelogin == true)
     }
+
+    // MARK: - shouldRefresh (popover-open / wake throttle)
+
+    @Test func shouldRefreshAllowedWhenNeverRefreshed() {
+        let store = UsageStore(fetcher: FailingFetcher(), cacheFile: tempCacheFile())
+        #expect(store.shouldRefresh(now: Date(), minGap: 30))
+    }
+
+    @Test func shouldRefreshAllowedAtOrAfterMinGap() async {
+        let (store, cache) = makeStore(["tok": .success(snap(10))])
+        defer { try? FileManager.default.removeItem(at: cache.deletingLastPathComponent()) }
+        let t0 = Date(timeIntervalSince1970: 1_000)
+        await store.refresh(accounts: [(account("a"), "tok")], now: t0)
+
+        #expect(store.shouldRefresh(now: t0.addingTimeInterval(30), minGap: 30))
+        #expect(store.shouldRefresh(now: t0.addingTimeInterval(45), minGap: 30))
+    }
+
+    @Test func shouldRefreshSkippedBeforeMinGap() async {
+        let (store, cache) = makeStore(["tok": .success(snap(10))])
+        defer { try? FileManager.default.removeItem(at: cache.deletingLastPathComponent()) }
+        let t0 = Date(timeIntervalSince1970: 1_000)
+        await store.refresh(accounts: [(account("a"), "tok")], now: t0)
+
+        #expect(!store.shouldRefresh(now: t0.addingTimeInterval(29), minGap: 30))
+    }
+
+    @Test func failedRefreshDoesNotCountAsRecentSuccessForThrottle() async {
+        let (store, cache) = makeStore(["tok": .failure(.network)])
+        defer { try? FileManager.default.removeItem(at: cache.deletingLastPathComponent()) }
+        let t0 = Date(timeIntervalSince1970: 1_000)
+        await store.refresh(accounts: [(account("a"), "tok")], now: t0)
+
+        // A failed refresh must not start the throttle window — refreshing
+        // again a second later is still allowed.
+        #expect(store.shouldRefresh(now: t0.addingTimeInterval(1), minGap: 30))
+    }
 }

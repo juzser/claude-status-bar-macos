@@ -54,5 +54,9 @@ struct PopoverView: View {
         // after the user logs back in, instead of waiting out the poll
         // loop's failure backoff.
         .task { await appState.recheckReloginAccounts() }
+        // Also runs on every popover open, throttled (see
+        // refreshUsageIfNeeded()) so a quickly reopened popover shows
+        // current usage instead of waiting out the poll interval.
+        .task { await appState.refreshUsageIfNeeded() }
     }
 }
