@@ -143,6 +143,12 @@ private struct AccountsTab: View {
 
     var body: some View {
         Form {
+            Toggle("Use token-slayer backend (when installed)", isOn: $settings.useTokenSlayer)
+            Text(backendStatusText)
+                .font(.caption).foregroundStyle(.secondary)
+            if let slayerErrorMessage = appState.slayerErrorMessage {
+                Text(slayerErrorMessage).font(.caption).foregroundStyle(.orange)
+            }
             if appState.accounts.isEmpty {
                 Text("No Claude account found").foregroundStyle(.secondary)
             }
@@ -151,6 +157,13 @@ private struct AccountsTab: View {
             }
         }
         .padding(20)
+    }
+
+    /// Subtle backend indicator: which mechanism is currently driving
+    /// accounts/usage/switching. Only meaningful once a refresh has run at
+    /// least once (`usingSlayerBackend` reflects the most recent check).
+    private var backendStatusText: String {
+        appState.usingSlayerBackend ? "Backend: token-slayer" : "Backend: native (Keychain)"
     }
 
     private func binding(for id: String) -> Binding<Bool> {

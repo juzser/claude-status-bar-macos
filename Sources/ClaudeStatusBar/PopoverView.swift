@@ -13,7 +13,8 @@ struct PopoverView: View {
                         .font(.caption).foregroundStyle(.orange)
                 }
                 SessionsSection(sessions: appState.sessions,
-                                titles: appState.sessionTitles, now: context.date)
+                                titles: appState.sessionTitles,
+                                billedAccounts: appState.sessionBilledAccounts, now: context.date)
                 Divider()
                 AccountsSection(accounts: appState.visibleAccounts,
                                 states: appState.usageStore.states,
@@ -23,6 +24,7 @@ struct PopoverView: View {
                                 redColor: Color(hex: appState.settings.redColorHex) ?? .red,
                                 now: context.date,
                                 switchFailedAccountId: appState.switchFailedAccountId,
+                                switchFailedMessage: appState.switchFailedMessage,
                                 onSwitch: { account in
                                     Task { await appState.switchAccount(account) }
                                 },
@@ -58,5 +60,8 @@ struct PopoverView: View {
         // refreshUsageIfNeeded()) so a quickly reopened popover shows
         // current usage instead of waiting out the poll interval.
         .task { await appState.refreshUsageIfNeeded() }
+        // Slayer-mode session annotation (billed_account per session); a
+        // cheap no-op call in native mode.
+        .task { await appState.refreshSessionAnnotations() }
     }
 }
