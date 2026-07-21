@@ -45,6 +45,14 @@ final class AppState {
     private var tickInterval: Duration = .seconds(1)
     private var pollCycle = 0
     private var started = false
+    /// Guards `refreshUsageIfNeeded()` against the popover-open and
+    /// wake-from-sleep triggers firing near-simultaneously: both check
+    /// `usageStore.shouldRefresh()` before either's `refreshUsageNow()` call
+    /// has completed, so `lastSuccessfulRefreshAt` alone can't stop a second
+    /// concurrent refresh. Race-free because the check-and-set in
+    /// `refreshUsageIfNeeded()` has no `await` between them — the whole
+    /// guard runs as one uninterrupted step on this actor.
+    private var refreshInFlight = false
     /// Stored (not fire-and-forget) so `usageInputs(_:)` can await it before
     /// the first real Keychain read of a launch — see its assignment in
     /// `start()` for why that ordering matters.
@@ -107,7 +115,11 @@ final class AppState {
         ) { [weak self] _ in
             guard let self else { return }
             Task {
-                await LiveCredentialSelfHeal.run(diagnosticLog: self.paths.root.appendingPathComponent("native-switch.log"))
+                _ = await LiveCredentialSelfHeal.run(diagnosticLog: self.paths.root.appendingPathComponent("native-switch.log"))
+                // Waking is also a sharp signal that usage data may be
+                // stale (the poll loop paused for the whole sleep). Throttled
+                // like the popover-open trigger — see refreshUsageIfNeeded().
+                await self.refreshUsageIfNeeded()
             }
         }
         reaggregate()
@@ -225,6 +237,28 @@ final class AppState {
     func refreshUsageNow() async {
         accounts = resolveAccounts()
         await usageStore.refresh(accounts: await usageInputs(accounts))
+    }
+
+    /// Popover-open and wake-from-sleep both call this instead of
+    /// `refreshUsageNow()` directly: it skips the refresh when
+    /// `UsageStore.shouldRefresh` says the last successful fetch is still
+    /// recent, so neither trigger can hammer the API by firing repeatedly
+    /// (popover reopened, laptop waking in quick succession). The throttle
+    /// window itself is decided in StatusBarCore (testable); a throttled-in
+    /// call still goes through the normal `refreshUsageNow()` path, so the
+    /// existing per-account failure backoff still applies.
+    ///
+    /// `refreshInFlight` additionally covers the case the timestamp-based
+    /// throttle alone can't: wake and popover-open firing close enough
+    /// together that neither's `refreshUsageNow()` has finished (and so
+    /// written `lastSuccessfulRefreshAt`) by the time the other's check
+    /// runs. Without it both would pass `shouldRefresh()` and fire a
+    /// duplicate concurrent fetch.
+    func refreshUsageIfNeeded() async {
+        guard !refreshInFlight, usageStore.shouldRefresh() else { return }
+        refreshInFlight = true
+        defer { refreshInFlight = false }
+        await refreshUsageNow()
     }
 
     private func resolveAccounts() -> [Account] {
