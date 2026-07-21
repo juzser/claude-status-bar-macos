@@ -13,6 +13,25 @@ public enum TokenSlayerMapping {
         slayer.uuid ?? slayer.name
     }
 
+    /// Collapses accounts that resolve to the same `accountId(for:)` (e.g.
+    /// two slots sharing a `uuid` because one was re-added under a new
+    /// `name` while the old slot is still present) down to one entry per id
+    /// — the CLI's own list order decides the winner, last one in wins.
+    /// Required before building any `[id: ...]` dictionary from a slayer
+    /// account list: `Dictionary(uniqueKeysWithValues:)` traps on a
+    /// duplicate key, and the CLI's contract doesn't guarantee `uuid`
+    /// uniqueness across slots.
+    public static func dedupedById(_ accounts: [SlayerAccount]) -> [SlayerAccount] {
+        var order: [String] = []
+        var byId: [String: SlayerAccount] = [:]
+        for account in accounts {
+            let id = accountId(for: account)
+            if byId[id] == nil { order.append(id) }
+            byId[id] = account
+        }
+        return order.compactMap { byId[$0] }
+    }
+
     /// `slot` is set to the slayer `index` purely so `AccountsSection`'s
     /// existing "has a slot → eligible for a Switch button" gate passes; the
     /// actual switch target is always `slayer.name` (index is documented as

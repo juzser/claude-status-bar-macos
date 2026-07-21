@@ -108,4 +108,25 @@ import Testing
         let snapshot = TokenSlayerMapping.usageState(from: slayer).snapshot
         #expect(snapshot?.fetchedAt ?? .distantPast >= before)
     }
+
+    // MARK: - dedupedById
+
+    @Test func dedupedByIdKeepsLastAccountWhenIdsCollide() {
+        // Two slots can legitimately share a `uuid` (e.g. re-adding an
+        // account under a new name while an old slot still exists) — the
+        // CLI's own list order determines which one wins, matching how
+        // `Dictionary(_:uniquingKeysWith:)` last-wins merges would behave.
+        let stale = makeAccount(index: 0, name: "work-old", uuid: "u1")
+        let fresh = makeAccount(index: 1, name: "work-new", uuid: "u1")
+        let deduped = TokenSlayerMapping.dedupedById([stale, fresh])
+        #expect(deduped.count == 1)
+        #expect(deduped.first?.name == "work-new")
+    }
+
+    @Test func dedupedByIdPreservesNonCollidingAccountsInOrder() {
+        let a = makeAccount(index: 0, name: "a", uuid: "u1")
+        let b = makeAccount(index: 1, name: "b", uuid: "u2")
+        let deduped = TokenSlayerMapping.dedupedById([a, b])
+        #expect(deduped.map(\.name) == ["a", "b"])
+    }
 }

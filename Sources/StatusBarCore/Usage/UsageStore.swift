@@ -128,6 +128,21 @@ public final class UsageStore {
         saveCache()
     }
 
+    /// Downgrades existing states to `.stale` — the slayer-mode counterpart
+    /// to `refresh(accounts:)`'s own native failure branch (which does the
+    /// same `freshness = .stale` assignment), so a lost connection to
+    /// token-slayer dims the popover's rows the same way a lost network
+    /// connection dims a native account's. Ids with no existing state are
+    /// left alone: there's nothing to dim, and creating a bare stale entry
+    /// would wrongly imply the account was seen before.
+    public func markStale(_ ids: [String]) {
+        for id in ids {
+            guard var state = states[id] else { continue }
+            state.freshness = .stale
+            states[id] = state
+        }
+    }
+
     /// Marks the given account ids as needing relogin, without disturbing
     /// any id that already has state (e.g. from a completed fetch). Used by
     /// `AppState.resolveAccounts()` right after loading a migrated native

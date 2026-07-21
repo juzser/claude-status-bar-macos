@@ -246,6 +246,20 @@ private func makeStore(_ results: [String: Result<UsageSnapshot, UsageError>]) -
         #expect(store.shouldRefresh(now: Date(timeIntervalSince1970: 5_001), minGap: 30))
     }
 
+    @Test func markStaleDowngradesExistingFreshState() {
+        let store = UsageStore(fetcher: FailingFetcher(), cacheFile: tempCacheFile())
+        store.apply(externalStates: ["a": AccountUsageState(snapshot: snap(1), freshness: .fresh)])
+        store.markStale(["a"])
+        #expect(store.states["a"]?.freshness == .stale)
+        #expect(store.states["a"]?.snapshot?.fiveHour?.utilization == 1)  // snapshot kept
+    }
+
+    @Test func markStaleIgnoresIdsWithNoExistingState() {
+        let store = UsageStore(fetcher: FailingFetcher(), cacheFile: tempCacheFile())
+        store.markStale(["never-seen"])
+        #expect(store.states["never-seen"] == nil)
+    }
+
     @Test func appliedStateSurvivesCacheRoundTrip() {
         let cache = tempCacheFile()
         defer { try? FileManager.default.removeItem(at: cache) }
