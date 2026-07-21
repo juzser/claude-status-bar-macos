@@ -45,6 +45,14 @@ final class AppState {
     private var tickInterval: Duration = .seconds(1)
     private var pollCycle = 0
     private var started = false
+    /// Guards `refreshUsageIfNeeded()` against the popover-open and
+    /// wake-from-sleep triggers firing near-simultaneously: both check
+    /// `usageStore.shouldRefresh()` before either's `refreshUsageNow()` call
+    /// has completed, so `lastSuccessfulRefreshAt` alone can't stop a second
+    /// concurrent refresh. Race-free because the check-and-set in
+    /// `refreshUsageIfNeeded()` has no `await` between them — the whole
+    /// guard runs as one uninterrupted step on this actor.
+    private var refreshInFlight = false
     /// Stored (not fire-and-forget) so `usageInputs(_:)` can await it before
     /// the first real Keychain read of a launch — see its assignment in
     /// `start()` for why that ordering matters.
@@ -239,8 +247,17 @@ final class AppState {
     /// window itself is decided in StatusBarCore (testable); a throttled-in
     /// call still goes through the normal `refreshUsageNow()` path, so the
     /// existing per-account failure backoff still applies.
+    ///
+    /// `refreshInFlight` additionally covers the case the timestamp-based
+    /// throttle alone can't: wake and popover-open firing close enough
+    /// together that neither's `refreshUsageNow()` has finished (and so
+    /// written `lastSuccessfulRefreshAt`) by the time the other's check
+    /// runs. Without it both would pass `shouldRefresh()` and fire a
+    /// duplicate concurrent fetch.
     func refreshUsageIfNeeded() async {
-        guard usageStore.shouldRefresh() else { return }
+        guard !refreshInFlight, usageStore.shouldRefresh() else { return }
+        refreshInFlight = true
+        defer { refreshInFlight = false }
         await refreshUsageNow()
     }
 
