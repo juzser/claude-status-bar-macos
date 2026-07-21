@@ -73,7 +73,44 @@ public actor NativeAccountSwitcher {
 
     public func switchTo(account: Account) async -> Bool {
         let state = loadState(stateFile)
-        guard state.activeId != account.id else { return true }
+
+        // `state.activeId` is only ever this app's own memory of who's
+        // live — it goes stale the moment anything switches live
+        // credentials without going through this method: the token-slayer
+        // backend (AppState.switchAccount's slayer branch never calls
+        // switchTo), or a bare `token-slayer switch <name>` run directly in
+        // a terminal. Reading the *live* oauthAccount block and matching it
+        // against the accounts this app tracks derives who's really live,
+        // independent of that pointer. Read once up front — before the
+        // early-return guard below — and reuse the same snapshot later as
+        // this switch's outgoing oauth block, so both the guard and the
+        // vault backup destination are decided from the same live read.
+        let currentLiveOauthBlock = readLiveOauthBlock()
+        let liveOwner = Self.resolveLiveOwner(liveOauthBlock: currentLiveOauthBlock, accounts: state.accounts)
+
+        let effectiveOutgoingId: String?
+        switch liveOwner {
+        case .notApplicable:
+            // No identifying data could be extracted from the live block at
+            // all (unreadable, or present but missing both organizationUuid
+            // and emailAddress) — nothing to contradict the stored pointer
+            // with, so fall back to trusting it exactly as before.
+            effectiveOutgoingId = state.activeId
+        case .identified(let ownerId):
+            // Live state positively identifies who's really active —
+            // trust that over the stored pointer even when they agree,
+            // since agreement here is confirmed rather than assumed.
+            effectiveOutgoingId = ownerId
+        case .unidentifiable:
+            // The live block positively matches zero tracked accounts, or
+            // matches more than one (ambiguous). Guessing which vault entry
+            // to overwrite from here risks destroying an unrelated
+            // account's stored refresh token, so refuse instead.
+            writeDiagnostic("switch to \(account.id) failed: could not verify which tracked account currently owns the live credentials (no match, or an ambiguous match, against native-accounts.json) — refusing to guess and risk corrupting a vault backup")
+            return false
+        }
+
+        guard effectiveOutgoingId != account.id else { return true }
 
         // Re-establish trust for the target account's vault item before
         // reading it: readVaultBackup is now non-interactive (Finding #2),
@@ -99,9 +136,8 @@ public actor NativeAccountSwitcher {
             writeDiagnostic("switch to \(account.id) failed: could not read current live credentials")
             return false
         }
-        let currentLiveOauthBlock = readLiveOauthBlock()
 
-        if let outgoingId = state.activeId {
+        if let outgoingId = effectiveOutgoingId {
             let outgoingBackup = CredentialBackup(liveCredentials: currentLiveCredentials,
                                                   oauthAccountBlock: currentLiveOauthBlock)
             guard writeVaultBackup(outgoingId, outgoingBackup) else {
@@ -172,5 +208,49 @@ public actor NativeAccountSwitcher {
         config["oauthAccount"] = blockObj
         guard let newData = try? JSONSerialization.data(withJSONObject: config) else { return false }
         return (try? AtomicFile.write(newData, to: configFile)) != nil
+    }
+
+    /// Result of matching a live oauthAccount block against the accounts
+    /// `switchTo` tracks in `native-accounts.json`.
+    enum LiveOwnerResolution: Equatable {
+        /// No identifying key (organizationUuid or emailAddress) could be
+        /// extracted from the live block — it was unreadable, or present
+        /// but carries neither field. Not enough to contradict the stored
+        /// pointer, so callers should fall back to trusting it.
+        case notApplicable
+        /// Exactly one tracked account matches the live block's identity.
+        case identified(String)
+        /// The live block carries an identity that matches zero tracked
+        /// accounts, or matches more than one (ambiguous) — a caller must
+        /// not guess from here.
+        case unidentifiable
+    }
+
+    /// Matches organizationUuid first (the more stable identifier — same
+    /// priority `AccountCapture.matchingIndex` uses when reconciling a
+    /// freshly captured login), falling back to email only when no
+    /// organizationUuid was extracted or it matched nothing. A key that
+    /// resolves to more than one tracked account is treated as ambiguous
+    /// rather than picking the first match, since guessing wrong here is
+    /// exactly the corruption this method exists to prevent.
+    static func resolveLiveOwner(liveOauthBlock: Data?, accounts: [NativeAccount]) -> LiveOwnerResolution {
+        guard let liveOauthBlock else { return .notApplicable }
+        let organizationUuid = AccountDiscovery.organizationUuid(from: liveOauthBlock)
+        let email = AccountDiscovery.emailAddress(from: liveOauthBlock)
+        guard organizationUuid != nil || email != nil else { return .notApplicable }
+
+        if let organizationUuid {
+            let matches = accounts.filter { $0.organizationUuid == organizationUuid }
+            if matches.count == 1 { return .identified(matches[0].id) }
+            if matches.count > 1 { return .unidentifiable }
+            // No organizationUuid match: fall through to the email key below.
+        }
+        if let email {
+            let matches = accounts.filter { $0.email == email }
+            if matches.count == 1 { return .identified(matches[0].id) }
+            if matches.count > 1 { return .unidentifiable }
+        }
+        // Had at least one identifying key, but it matched no tracked account.
+        return .unidentifiable
     }
 }

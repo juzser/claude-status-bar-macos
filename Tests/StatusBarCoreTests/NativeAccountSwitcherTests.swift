@@ -312,4 +312,229 @@ import Testing
         let result = await switcher.switchTo(account: account("native-1", state: state))
         #expect(result == false)
     }
+
+    // MARK: - Deriving the true live owner from live state
+
+    /// Builds a fake ~/.claude.json "oauthAccount" block Data, matching the
+    /// shape `AccountDiscovery.organizationUuid(from:)` /
+    /// `.emailAddress(from:)` parse.
+    private func oauthBlock(organizationUuid: String? = nil, email: String? = nil) -> Data {
+        var obj: [String: Any] = [:]
+        if let organizationUuid { obj["organizationUuid"] = organizationUuid }
+        if let email { obj["emailAddress"] = email }
+        return try! JSONSerialization.data(withJSONObject: obj)
+    }
+
+    /// Reproduces the token-slayer divergence bug's failure mode #1: stored
+    /// `activeId` says "native-0" is active, but the live oauthAccount block
+    /// actually identifies "native-1" (org-b) as the true owner — e.g.
+    /// because token-slayer switched live credentials without ever touching
+    /// native-accounts.json. Switching to "native-0" (what the stale pointer
+    /// already claims is active) must NOT silently no-op: the live
+    /// credentials really belong to native-1, so this has to be a real
+    /// switch.
+    @Test func staleStoredActiveIdDoesNotMaskARealSwitch() async {
+        let state = makeState()
+        var vault: [String: CredentialBackup] = [
+            "native-0": CredentialBackup(liveCredentials: Data("native-0-creds".utf8), oauthAccountBlock: nil),
+        ]
+        var liveCredentials = Data("actually-native-1s-creds".utf8)
+        var writeLiveCalled = false
+
+        let switcher = NativeAccountSwitcher(
+            stateFile: URL(fileURLWithPath: "/dev/null"),
+            diagnosticLog: nil,
+            readVaultBackup: { vault[$0] },
+            writeVaultBackup: { id, backup in vault[id] = backup; return true },
+            readLiveCredentials: { liveCredentials },
+            writeLiveCredentials: { data in writeLiveCalled = true; liveCredentials = data; return true },
+            readLiveOauthBlock: { self.oauthBlock(organizationUuid: "org-b", email: "b@example.com") },
+            writeLiveOauthBlock: { _ in true },
+            loadState: { _ in state },
+            saveState: { _, _ in true }
+        )
+
+        let result = await switcher.switchTo(account: account("native-0", state: state))
+
+        #expect(result)
+        #expect(writeLiveCalled)
+        #expect(liveCredentials == Data("native-0-creds".utf8))
+    }
+
+    /// Failure mode #2, the data-loss one: with the same stale-pointer setup
+    /// as above, the live credentials being displaced must be backed up
+    /// under their *true* owner (native-1, derived from the live
+    /// oauthAccount block) — not under the stale stored activeId
+    /// (native-0), which would silently overwrite native-0's own vault entry
+    /// with native-1's credentials.
+    @Test func outgoingBackupGoesToDerivedOwnerNotStaleStoredActiveId() async {
+        let state = makeState()
+        var vault: [String: CredentialBackup] = [
+            "native-0": CredentialBackup(liveCredentials: Data("native-0-original".utf8), oauthAccountBlock: nil),
+        ]
+        let liveCredentials = Data("actually-native-1s-creds".utf8)
+
+        let switcher = NativeAccountSwitcher(
+            stateFile: URL(fileURLWithPath: "/dev/null"),
+            diagnosticLog: nil,
+            readVaultBackup: { _ in CredentialBackup(liveCredentials: Data("native-0-target".utf8), oauthAccountBlock: nil) },
+            writeVaultBackup: { id, backup in vault[id] = backup; return true },
+            readLiveCredentials: { liveCredentials },
+            writeLiveCredentials: { _ in true },
+            readLiveOauthBlock: { self.oauthBlock(organizationUuid: "org-b", email: "b@example.com") },
+            writeLiveOauthBlock: { _ in true },
+            loadState: { _ in state },
+            saveState: { _, _ in true }
+        )
+
+        let result = await switcher.switchTo(account: account("native-0", state: state))
+
+        #expect(result)
+        // native-1 (the real owner of the displaced live credentials) gets
+        // the backup...
+        #expect(vault["native-1"]?.liveCredentials == liveCredentials)
+        // ...and native-0's own vault entry (its true stored backup) must be
+        // left completely untouched.
+        #expect(vault["native-0"]?.liveCredentials == Data("native-0-original".utf8))
+    }
+
+    /// When the live oauthAccount block positively identifies an owner that
+    /// happens to already match the stored activeId, behaviour is exactly
+    /// the pre-existing happy path: the guard fires against the (now
+    /// confirmed, not just assumed) stored id.
+    @Test func identifiedLiveOwnerMatchingStoredActiveIdBehavesLikeUnchangedHappyPath() async {
+        let state = makeState()
+        var vault: [String: CredentialBackup] = [:]
+
+        let switcher = NativeAccountSwitcher(
+            stateFile: URL(fileURLWithPath: "/dev/null"),
+            diagnosticLog: nil,
+            readVaultBackup: { _ in CredentialBackup(liveCredentials: Data("target".utf8), oauthAccountBlock: nil) },
+            writeVaultBackup: { id, backup in vault[id] = backup; return true },
+            readLiveCredentials: { Data("current".utf8) },
+            writeLiveCredentials: { _ in true },
+            readLiveOauthBlock: { self.oauthBlock(organizationUuid: "org-a", email: "a@example.com") },
+            writeLiveOauthBlock: { _ in true },
+            loadState: { _ in state },
+            saveState: { _, _ in true }
+        )
+
+        let result = await switcher.switchTo(account: account("native-1", state: state))
+
+        #expect(result)
+        #expect(vault["native-0"]?.liveCredentials == Data("current".utf8))
+    }
+
+    /// A live oauthAccount block can also identify the owner by email alone
+    /// (no organizationUuid field) — the same fallback order
+    /// `AccountCapture.matchingIndex` already uses.
+    @Test func identifiesLiveOwnerByEmailWhenOrganizationUuidAbsent() async {
+        let state = makeState()
+        var vault: [String: CredentialBackup] = [:]
+
+        let switcher = NativeAccountSwitcher(
+            stateFile: URL(fileURLWithPath: "/dev/null"),
+            diagnosticLog: nil,
+            readVaultBackup: { _ in CredentialBackup(liveCredentials: Data("native-0-target".utf8), oauthAccountBlock: nil) },
+            writeVaultBackup: { id, backup in vault[id] = backup; return true },
+            readLiveCredentials: { Data("actually-native-1s-creds".utf8) },
+            writeLiveCredentials: { _ in true },
+            readLiveOauthBlock: { self.oauthBlock(email: "b@example.com") },
+            writeLiveOauthBlock: { _ in true },
+            loadState: { _ in state },
+            saveState: { _, _ in true }
+        )
+
+        let result = await switcher.switchTo(account: account("native-0", state: state))
+
+        #expect(result)
+        #expect(vault["native-1"]?.liveCredentials == Data("actually-native-1s-creds".utf8))
+    }
+
+    /// The live oauthAccount block positively identifies an org uuid/email
+    /// that matches no tracked account at all — e.g. the live login belongs
+    /// to some account this app never captured. Guessing which vault entry
+    /// to overwrite here would risk destroying an unrelated account's
+    /// backup, so this must abort outright rather than fall back to the
+    /// stale stored activeId.
+    @Test func unidentifiableLiveOwnerAbortsWithoutWritingAnyVaultBackup() async {
+        let state = makeState()
+        var writeVaultBackupCalled = false
+        var writeLiveCalled = false
+
+        let switcher = NativeAccountSwitcher(
+            stateFile: URL(fileURLWithPath: "/dev/null"),
+            diagnosticLog: nil,
+            readVaultBackup: { _ in CredentialBackup(liveCredentials: Data("target".utf8), oauthAccountBlock: nil) },
+            writeVaultBackup: { _, _ in writeVaultBackupCalled = true; return true },
+            readLiveCredentials: { Data("current".utf8) },
+            writeLiveCredentials: { _ in writeLiveCalled = true; return true },
+            readLiveOauthBlock: { self.oauthBlock(organizationUuid: "org-unknown", email: "unknown@example.com") },
+            writeLiveOauthBlock: { _ in true },
+            loadState: { _ in state },
+            saveState: { _, _ in true }
+        )
+
+        let result = await switcher.switchTo(account: account("native-1", state: state))
+
+        #expect(result == false)
+        #expect(writeVaultBackupCalled == false)
+        #expect(writeLiveCalled == false)
+    }
+
+    /// Two tracked accounts sharing the same organizationUuid (a corrupted
+    /// native-accounts.json) makes the live owner ambiguous even though the
+    /// live block positively matches *something*. Same abort-don't-guess
+    /// contract as the fully-unidentifiable case.
+    @Test func ambiguousLiveOwnerAcrossAccountsAbortsWithoutWritingAnyVaultBackup() async {
+        var state = makeState()
+        state.accounts[1].organizationUuid = "org-a" // now both accounts share "org-a"
+        var writeVaultBackupCalled = false
+
+        let switcher = NativeAccountSwitcher(
+            stateFile: URL(fileURLWithPath: "/dev/null"),
+            diagnosticLog: nil,
+            readVaultBackup: { _ in CredentialBackup(liveCredentials: Data("target".utf8), oauthAccountBlock: nil) },
+            writeVaultBackup: { _, _ in writeVaultBackupCalled = true; return true },
+            readLiveCredentials: { Data("current".utf8) },
+            writeLiveCredentials: { _ in true },
+            readLiveOauthBlock: { self.oauthBlock(organizationUuid: "org-a") },
+            writeLiveOauthBlock: { _ in true },
+            loadState: { _ in state },
+            saveState: { _, _ in true }
+        )
+
+        let result = await switcher.switchTo(account: account("native-1", state: state))
+
+        #expect(result == false)
+        #expect(writeVaultBackupCalled == false)
+    }
+
+    /// Diagnostic-log coverage for the abort path: the message must explain
+    /// *why* the switch refused, not just that it failed silently.
+    @Test func unidentifiableLiveOwnerWritesExplanatoryDiagnostic() async throws {
+        let state = makeState()
+        let logFile = FileManager.default.temporaryDirectory
+            .appendingPathComponent("native-switch-test-\(UUID().uuidString).log")
+        defer { try? FileManager.default.removeItem(at: logFile) }
+
+        let switcher = NativeAccountSwitcher(
+            stateFile: URL(fileURLWithPath: "/dev/null"),
+            diagnosticLog: logFile,
+            readVaultBackup: { _ in CredentialBackup(liveCredentials: Data("target".utf8), oauthAccountBlock: nil) },
+            writeVaultBackup: { _, _ in true },
+            readLiveCredentials: { Data("current".utf8) },
+            writeLiveCredentials: { _ in true },
+            readLiveOauthBlock: { self.oauthBlock(organizationUuid: "org-unknown") },
+            writeLiveOauthBlock: { _ in true },
+            loadState: { _ in state },
+            saveState: { _, _ in true }
+        )
+
+        let result = await switcher.switchTo(account: account("native-1", state: state))
+        #expect(result == false)
+
+        let logContents = try String(contentsOf: logFile, encoding: .utf8)
+        #expect(logContents.contains("could not verify") || logContents.contains("cannot verify") || logContents.contains("ambiguous") || logContents.contains("live owner") || logContents.contains("no tracked account"))
+    }
 }
