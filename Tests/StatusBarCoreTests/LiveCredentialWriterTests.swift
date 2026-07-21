@@ -15,6 +15,50 @@ import Testing
         #expect(LiveCredentialWriter.read(reader: { _ in nil }) == nil)
     }
 
+    // MARK: - repairRead / repairReadWithStatus
+    //
+    // Finding #1: LiveCredentialSelfHeal's repair branch used to be dead
+    // code because its `read` default routed to the same non-interactive
+    // `read()` the trust probe already uses — whenever the probe failed,
+    // that read failed identically, so the write/ACL-repair step below it
+    // could never run. `repairRead` is the fix: a distinct, deliberately
+    // interactive read used *only* from the repair branch, never from any
+    // routine/poll path.
+
+    @Test func repairReadDelegatesToInjectedReader() {
+        let result = LiveCredentialWriter.repairRead(reader: { service in
+            service == LiveCredentialWriter.service ? Data("token".utf8) : nil
+        })
+        #expect(result == Data("token".utf8))
+    }
+
+    @Test func repairReadReturnsNilWhenReaderReturnsNil() {
+        #expect(LiveCredentialWriter.repairRead(reader: { _ in nil }) == nil)
+    }
+
+    @Test func repairReadWithStatusDelegatesToInjectedReader() {
+        let result = LiveCredentialWriter.repairReadWithStatus(reader: { service in
+            (service == LiveCredentialWriter.service ? Data("token".utf8) : nil, .success)
+        })
+        #expect(result.data == Data("token".utf8))
+        #expect(result.status == .success)
+    }
+
+    @Test func repairReadWithStatusPassesThroughFailureStatus() {
+        let result = LiveCredentialWriter.repairReadWithStatus(reader: { _ in (nil, .interactionNotAllowed) })
+        #expect(result.data == nil)
+        #expect(result.status == .interactionNotAllowed)
+    }
+
+    @Test func defaultRepairReaderWithStatusUsesInteractiveKeychainRead() {
+        // No injectable seam of its own (it's the production wiring), so
+        // this only confirms it compiles and — against a real, presumably
+        // absent test service — reports itemNotFound rather than crashing.
+        let result = LiveCredentialWriter.defaultInteractiveReaderWithStatus(
+            service: "com.claude-status-bar.does-not-exist-test-only")
+        #expect(result.data == nil)
+    }
+
     @Test func writePassesDataTrustedPathsAndServiceThrough() {
         var captured: (Data, [String], String)?
         let ok = LiveCredentialWriter.write(Data("token".utf8), trustedPaths: ["/bin/claude"]) { data, paths, service in
@@ -117,6 +161,42 @@ import Testing
         #expect(capturedUpdateAttributes?[kSecValueData as String] as? Data == Data("token".utf8))
     }
 
+    /// This write only ever runs from a user-initiated action (self-heal's
+    /// repair branch, gated behind its own non-interactive trust probe) —
+    /// never from a background poll loop — so it's fine, and in fact
+    /// intended, for the underlying `SecItemUpdate`/`SecItemAdd` to be
+    /// allowed to prompt if macOS decides it needs to.
+    @Test func performWriteSetsExplicitAuthenticationUIAllowPolicy() {
+        var capturedUpdateAttributes: [String: Any]?
+        _ = LiveCredentialWriter.performWrite(
+            data: Data("token".utf8),
+            trustedPaths: [],
+            service: LiveCredentialWriter.service,
+            account: "ser",
+            update: { _, attributes in
+                capturedUpdateAttributes = attributes as? [String: Any]
+                return errSecSuccess
+            },
+            add: { _, _ in errSecSuccess }
+        )
+        let authUI = capturedUpdateAttributes?[kSecUseAuthenticationUI as String] as? String
+        #expect(authUI == (kSecUseAuthenticationUIAllow as String))
+    }
+
+    @Test func performWriteReportsStatusThroughOnStatusCallback() {
+        var reported: [KeychainStatus] = []
+        _ = LiveCredentialWriter.performWrite(
+            data: Data("token".utf8),
+            trustedPaths: [],
+            service: LiveCredentialWriter.service,
+            account: "ser",
+            onStatus: { reported.append($0) },
+            update: { _, _ in errSecSuccess },
+            add: { _, _ in errSecSuccess }
+        )
+        #expect(reported == [.success])
+    }
+
     @Test func performWriteFallsBackToAddWhenItemMissing() {
         var capturedAddAttributes: [String: Any]?
 
@@ -199,6 +279,38 @@ import Testing
         #expect(capturedQuery?[kSecAttrLabel as String] as? String == LiveCredentialWriter.service)
         #expect(capturedUpdateAttributes?[kSecValueData as String] as? Data == Data("token".utf8))
         #expect(capturedUpdateAttributes?[kSecAttrAccess as String] == nil)
+    }
+
+    /// Same reasoning as `performWriteSetsExplicitAuthenticationUIAllowPolicy`:
+    /// value-only writes still only ever run from a user-initiated switch,
+    /// never a background poll.
+    @Test func performWriteValueSetsExplicitAuthenticationUIAllowPolicy() {
+        var capturedUpdateAttributes: [String: Any]?
+        _ = LiveCredentialWriter.performWriteValue(
+            data: Data("token".utf8),
+            service: LiveCredentialWriter.service,
+            account: "ser",
+            update: { _, attributes in
+                capturedUpdateAttributes = attributes as? [String: Any]
+                return errSecSuccess
+            },
+            add: { _, _ in errSecSuccess }
+        )
+        let authUI = capturedUpdateAttributes?[kSecUseAuthenticationUI as String] as? String
+        #expect(authUI == (kSecUseAuthenticationUIAllow as String))
+    }
+
+    @Test func performWriteValueReportsStatusThroughOnStatusCallback() {
+        var reported: [KeychainStatus] = []
+        _ = LiveCredentialWriter.performWriteValue(
+            data: Data("token".utf8),
+            service: LiveCredentialWriter.service,
+            account: "ser",
+            onStatus: { reported.append($0) },
+            update: { _, _ in errSecItemNotFound },
+            add: { _, _ in errSecSuccess }
+        )
+        #expect(reported == [.itemNotFound, .success])
     }
 
     @Test func performWriteValueFallsBackToAddWhenItemMissing() {

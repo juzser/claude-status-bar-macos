@@ -13,6 +13,7 @@ import Testing
         let capture = AccountCapture(
             storeFile: storeFile,
             readLiveCredentials: liveCredentials,
+            readLiveCredentialsForCapture: liveCredentials,
             readLiveOauthBlock: liveOauthBlock,
             vaultWrite: { id, backup in storage[id] = backup; return true },
             loadState: NativeAccountStore.load,
@@ -153,6 +154,7 @@ import Testing
         let capture = AccountCapture(
             storeFile: storeFile,
             readLiveCredentials: { live },
+            readLiveCredentialsForCapture: { live },
             readLiveOauthBlock: { oauth },
             vaultWrite: { id, backup in storage[id] = backup; return true },
             loadState: NativeAccountStore.load,
@@ -176,5 +178,37 @@ import Testing
             Issue.record("expected baseline to survive the failed save, enabling a retry"); return
         }
         #expect(account.email == "new@example.com")
+    }
+
+    /// `beginCapture()` is always called right before this app itself
+    /// launches `claude /login` in Terminal (`AppState.beginAddAccount()` /
+    /// `.beginRelogin()`) — user-initiated, same as `NativeAccountSwitcher
+    /// .switchTo`'s `readLiveCredentials`. `checkForNewLogin()`, in
+    /// contrast, is polled (popover-open + a ~60s ticker) and must stay
+    /// non-interactive. So the two need independent read closures rather
+    /// than sharing one.
+    @Test func beginCaptureUsesTheCaptureSpecificReadNotThePolledOne() async {
+        let storeFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: storeFile) }
+        var vault: [String: CredentialBackup] = [:]
+
+        let capture = AccountCapture(
+            storeFile: storeFile,
+            readLiveCredentials: { Data("polled-value".utf8) },
+            readLiveCredentialsForCapture: { Data("capture-value".utf8) },
+            readLiveOauthBlock: { nil },
+            vaultWrite: { id, backup in vault[id] = backup; return true },
+            loadState: NativeAccountStore.load,
+            saveState: { state, file in (try? NativeAccountStore.save(state, to: file)) != nil }
+        )
+
+        await capture.beginCapture()
+        // checkForNewLogin() diffs the polled read against the baseline: if
+        // beginCapture() had used the polled closure too, this would see no
+        // change (both "polled-value") and never report .captured.
+        let result = await capture.checkForNewLogin()
+        guard case .captured = result else {
+            Issue.record("expected .captured — beginCapture() must have used the capture-specific read"); return
+        }
     }
 }
