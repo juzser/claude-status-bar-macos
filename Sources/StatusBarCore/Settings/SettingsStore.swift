@@ -55,6 +55,14 @@ public final class SettingsStore {
     public var textAnimationEnabled: Bool {
         didSet { defaults.set(textAnimationEnabled, forKey: "textAnimationEnabled") }
     }
+    /// When true and the `token-slayer` CLI resolves, accounts/usage/session
+    /// switching delegate to it instead of the native Keychain-based
+    /// mechanism. Defaults to true so an install is picked up automatically;
+    /// false lets a user opt back into native behavior even with the CLI
+    /// present.
+    public var useTokenSlayer: Bool {
+        didSet { defaults.set(useTokenSlayer, forKey: "useTokenSlayer") }
+    }
 
     public var displayStyle: DisplayStyle {
         get { DisplayStyle(rawValue: displayStyleRaw) ?? .full }
@@ -89,5 +97,6 @@ public final class SettingsStore {
         yellowColorHex = defaults.string(forKey: "yellowColorHex") ?? "#FFCC00"
         redColorHex = defaults.string(forKey: "redColorHex") ?? "#FF3B30"
         textAnimationEnabled = defaults.object(forKey: "textAnimationEnabled") as? Bool ?? true
+        useTokenSlayer = defaults.object(forKey: "useTokenSlayer") as? Bool ?? true
     }
 }

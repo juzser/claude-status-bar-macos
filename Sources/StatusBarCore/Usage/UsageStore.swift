@@ -114,6 +114,20 @@ public final class UsageStore {
         return now.timeIntervalSince(last) >= minGap
     }
 
+    /// Injects already-fetched state (e.g. mapped from a `token-slayer`
+    /// response) directly, bypassing `refresh(accounts:)`'s own network
+    /// fetch entirely — the slayer-mode caller has already talked to the
+    /// CLI, not this store's `fetcher`. Each id's prior state is replaced
+    /// outright (not merged), mirroring the fresh-success branch of
+    /// `refresh(accounts:)`.
+    public func apply(externalStates: [String: AccountUsageState], now: Date = Date()) {
+        for (id, state) in externalStates {
+            states[id] = state
+        }
+        if !externalStates.isEmpty { lastSuccessfulRefreshAt = now }
+        saveCache()
+    }
+
     /// Marks the given account ids as needing relogin, without disturbing
     /// any id that already has state (e.g. from a completed fetch). Used by
     /// `AppState.resolveAccounts()` right after loading a migrated native
