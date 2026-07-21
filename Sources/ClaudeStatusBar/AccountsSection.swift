@@ -11,6 +11,9 @@ struct AccountsSection: View {
     let redColor: Color
     let now: Date
     let switchFailedAccountId: String?
+    /// Stderr text from a failed slayer-mode switch; nil for a native-mode
+    /// failure, which falls back to `AccountRow`'s generic message.
+    let switchFailedMessage: String?
     let onSwitch: (Account) -> Void
     let onRelogin: (Account) -> Void
     let onAddAccount: () -> Void
@@ -28,6 +31,7 @@ struct AccountsSection: View {
                                yellowColor: yellowColor, redColor: redColor, now: now,
                                showActiveBadge: accounts.count > 1,
                                switchFailed: switchFailedAccountId == account.id,
+                               switchFailedMessage: switchFailedAccountId == account.id ? switchFailedMessage : nil,
                                onSwitch: onSwitch, onRelogin: onRelogin)
                 }
             }
@@ -48,6 +52,7 @@ private struct AccountRow: View {
     let now: Date
     let showActiveBadge: Bool
     let switchFailed: Bool
+    let switchFailedMessage: String?
     let onSwitch: (Account) -> Void
     let onRelogin: (Account) -> Void
 
@@ -80,7 +85,7 @@ private struct AccountRow: View {
                 }
             }
             if switchFailed {
-                Text("Switch failed — check native-switch.log")
+                Text(switchFailedMessage ?? "Switch failed — check native-switch.log")
                     .font(.caption2).foregroundStyle(.orange)
             }
             if let snapshot = state?.snapshot {

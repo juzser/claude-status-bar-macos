@@ -212,4 +212,62 @@ private func makeStore(_ results: [String: Result<UsageSnapshot, UsageError>]) -
         // again a second later is still allowed.
         #expect(store.shouldRefresh(now: t0.addingTimeInterval(1), minGap: 30))
     }
+
+    // MARK: - apply(externalStates:) (token-slayer injection path)
+
+    @Test func applyInjectsExternalStatesById() {
+        let store = UsageStore(fetcher: FailingFetcher(), cacheFile: tempCacheFile())
+        let state = AccountUsageState(snapshot: snap(33), freshness: .fresh, needsRelogin: false)
+        store.apply(externalStates: ["a": state])
+        #expect(store.states["a"]?.snapshot?.fiveHour?.utilization == 33)
+        #expect(store.states["a"]?.freshness == .fresh)
+    }
+
+    @Test func applyOverwritesExistingStateForSameId() async {
+        let (store, cache) = makeStore(["tok": .success(snap(10))])
+        defer { try? FileManager.default.removeItem(at: cache.deletingLastPathComponent()) }
+        await store.refresh(accounts: [(account("a"), "tok")])
+        #expect(store.states["a"]?.snapshot?.fiveHour?.utilization == 10)
+
+        store.apply(externalStates: ["a": AccountUsageState(snapshot: snap(77), freshness: .fresh)])
+        #expect(store.states["a"]?.snapshot?.fiveHour?.utilization == 77)
+    }
+
+    @Test func applySetsLastSuccessfulRefreshAtWhenNonEmpty() {
+        let store = UsageStore(fetcher: FailingFetcher(), cacheFile: tempCacheFile())
+        let now = Date(timeIntervalSince1970: 5_000)
+        store.apply(externalStates: ["a": AccountUsageState(snapshot: snap(1), freshness: .fresh)], now: now)
+        #expect(!store.shouldRefresh(now: now.addingTimeInterval(1), minGap: 30))
+    }
+
+    @Test func applyWithEmptyStatesDoesNotDisturbThrottle() {
+        let store = UsageStore(fetcher: FailingFetcher(), cacheFile: tempCacheFile())
+        store.apply(externalStates: [:], now: Date(timeIntervalSince1970: 5_000))
+        #expect(store.shouldRefresh(now: Date(timeIntervalSince1970: 5_001), minGap: 30))
+    }
+
+    @Test func markStaleDowngradesExistingFreshState() {
+        let store = UsageStore(fetcher: FailingFetcher(), cacheFile: tempCacheFile())
+        store.apply(externalStates: ["a": AccountUsageState(snapshot: snap(1), freshness: .fresh)])
+        store.markStale(["a"])
+        #expect(store.states["a"]?.freshness == .stale)
+        #expect(store.states["a"]?.snapshot?.fiveHour?.utilization == 1)  // snapshot kept
+    }
+
+    @Test func markStaleIgnoresIdsWithNoExistingState() {
+        let store = UsageStore(fetcher: FailingFetcher(), cacheFile: tempCacheFile())
+        store.markStale(["never-seen"])
+        #expect(store.states["never-seen"] == nil)
+    }
+
+    @Test func appliedStateSurvivesCacheRoundTrip() {
+        let cache = tempCacheFile()
+        defer { try? FileManager.default.removeItem(at: cache) }
+        let store = UsageStore(fetcher: FailingFetcher(), cacheFile: cache)
+        store.apply(externalStates: ["a": AccountUsageState(snapshot: snap(66), freshness: .fresh)])
+
+        let warm = UsageStore(fetcher: FailingFetcher(), cacheFile: cache)
+        warm.loadCache()
+        #expect(warm.states["a"]?.snapshot?.fiveHour?.utilization == 66)
+    }
 }
