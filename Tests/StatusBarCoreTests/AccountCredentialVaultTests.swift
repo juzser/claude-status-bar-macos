@@ -172,14 +172,46 @@ import Testing
         #expect(ok == false)
     }
 
-    @Test func performRepairWriteDeletesExistingItemBeforeAdding() {
-        var deleteCalled = false
+    // Review finding M1: performRepairWrite used to be delete-then-add — if
+    // SecItemAdd failed after the delete had already succeeded, the vault
+    // backup was permanently destroyed with no rollback. Now update-then-add,
+    // mirroring LiveCredentialWriter.performWrite's already-correct contract:
+    // try SecItemUpdate first; only fall back to add when update reports the
+    // item doesn't exist yet; any other update failure returns false without
+    // ever calling add or touching the existing item.
+
+    @Test func performRepairWriteTriesUpdateBeforeAdding() {
+        var updateCalled = false
+        var addCalled = false
         _ = AccountCredentialVault.performRepairWrite(
             data: Data("token".utf8), service: "svc", accountId: "acct", trustedPaths: [],
-            add: { _, _ in errSecSuccess },
-            delete: { _ in deleteCalled = true; return errSecSuccess }
+            add: { _, _ in addCalled = true; return errSecSuccess },
+            update: { _, _ in updateCalled = true; return errSecSuccess }
         )
-        #expect(deleteCalled)
+        #expect(updateCalled)
+        #expect(addCalled == false)
+    }
+
+    @Test func performRepairWriteFallsBackToAddWhenUpdateReportsItemNotFound() {
+        var addCalled = false
+        let ok = AccountCredentialVault.performRepairWrite(
+            data: Data("token".utf8), service: "svc", accountId: "acct", trustedPaths: [],
+            add: { _, _ in addCalled = true; return errSecSuccess },
+            update: { _, _ in errSecItemNotFound }
+        )
+        #expect(ok)
+        #expect(addCalled)
+    }
+
+    @Test func performRepairWriteReturnsFalseWithoutAddingWhenUpdateFailsForOtherReason() {
+        var addCalled = false
+        let ok = AccountCredentialVault.performRepairWrite(
+            data: Data("token".utf8), service: "svc", accountId: "acct", trustedPaths: [],
+            add: { _, _ in addCalled = true; return errSecSuccess },
+            update: { _, _ in errSecInteractionNotAllowed }
+        )
+        #expect(ok == false)
+        #expect(addCalled == false)
     }
 
     @Test func performRepairWriteSetsExplicitAccessAndAuthenticationUIAllow() {
@@ -191,7 +223,7 @@ import Testing
                 capturedAttributes = attributes as? [String: Any]
                 return errSecSuccess
             },
-            delete: { _ in errSecSuccess }
+            update: { _, _ in errSecItemNotFound }
         )
         #expect(capturedAttributes?[kSecAttrAccess as String] != nil)
         let authUI = capturedAttributes?[kSecUseAuthenticationUI as String] as? String
@@ -204,8 +236,30 @@ import Testing
         let ok = AccountCredentialVault.performRepairWrite(
             data: Data("token".utf8), service: "svc", accountId: "acct", trustedPaths: [],
             add: { _, _ in errSecDuplicateItem },
-            delete: { _ in errSecSuccess }
+            update: { _, _ in errSecItemNotFound }
         )
         #expect(ok == false)
+    }
+
+    // MARK: - readStatus
+    //
+    // Minor review finding m2: switchTo's backup-read-miss diagnostic used to
+    // just say "no backup credentials found" with no indication of *why* —
+    // genuinely absent vs. blocked because the process isn't trusted yet.
+    // readStatus mirrors repairReadWithStatus's tuple-return convention so
+    // that call site can log the real KeychainStatus.
+
+    @Test func readStatusDelegatesToInjectedReader() {
+        let result = AccountCredentialVault.readStatus(accountId: "acct", reader: { _, _ in
+            (nil, .interactionNotAllowed)
+        })
+        #expect(result == .interactionNotAllowed)
+    }
+
+    @Test func defaultReaderWithStatusCompilesAndReportsItemNotFound() {
+        let result = AccountCredentialVault.defaultReaderWithStatus(
+            service: "com.claude-status-bar.does-not-exist-test-only", accountId: "does-not-exist")
+        #expect(result.data == nil)
+        #expect(result.status == .itemNotFound)
     }
 }

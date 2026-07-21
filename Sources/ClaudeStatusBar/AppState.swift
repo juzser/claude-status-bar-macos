@@ -56,7 +56,7 @@ final class AppState {
     /// Stored (not fire-and-forget) so `usageInputs(_:)` can await it before
     /// the first real Keychain read of a launch — see its assignment in
     /// `start()` for why that ordering matters.
-    private var selfHealTask: Task<Bool, Never>?
+    private var selfHealTask: Task<Void, Never>?
     /// Kept only so the observer could be removed later; nothing currently
     /// does, matching the other loop `Task`s in `start()` which also run for
     /// the app's lifetime with no explicit teardown.
@@ -67,11 +67,21 @@ final class AppState {
     /// `didWakeNotification` but does unlock the screen right before the
     /// user is likely to invoke `claude`.
     private var screenUnlockObserver: NSObjectProtocol?
-    /// Per-account "attempted this launch" set for `AccountVaultSelfHeal`
-    /// (Finding #2's proactive half) — see `AccountVaultSelfHeal
-    /// .accountsNeedingSelfHeal`'s doc comment for why this is scoped per
-    /// account rather than a single launch-wide flag.
-    private var vaultSelfHealAttempted: Set<String> = []
+    /// Whether this launch's one *interactive* `LiveCredentialSelfHeal`
+    /// attempt has already been spent — see `attemptLiveCredentialSelfHeal()`.
+    /// Review finding C1: without this, `run()`'s only gate was the
+    /// non-interactive `isTrusted` probe, so every call site below
+    /// (launch, wake, unlock, every `usageInputs(_:)` cycle) would retry the
+    /// *interactive* repair read on every single call whenever trust can't be
+    /// established — a prompt storm, not a fix.
+    ///
+    /// Minor review finding: `ClaudeStatusBar` is an untested executable
+    /// target (only `StatusBarCore` runs under `swift test`), so this gate
+    /// and the three call sites that share it are verified via
+    /// `LiveCredentialSelfHeal`'s own `StatusBarCoreTests` coverage of the
+    /// `allowInteractive` contract plus `swift build` + manual exercise, not
+    /// an automated test of `AppState` itself.
+    private var liveCredentialSelfHealAttempted = false
 
     private let credentialsFile = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".claude/.credentials.json")
@@ -110,8 +120,8 @@ final class AppState {
         // ordering guarantee — usageInputs(_:) awaits selfHealTask so the
         // fast, non-interactive ACL re-assertion always gets first crack at
         // fixing trust before that interactive-capable read can fire.
-        selfHealTask = Task {
-            await LiveCredentialSelfHeal.run(diagnosticLog: paths.root.appendingPathComponent("native-switch.log"))
+        selfHealTask = Task { [weak self] in
+            await self?.attemptLiveCredentialSelfHeal()
         }
         // claude's own token refresh can reset the ACL mid-session (see
         // usageInputs(_:)'s doc comment) — after a long sleep, the token is
@@ -126,7 +136,7 @@ final class AppState {
         ) { [weak self] _ in
             guard let self else { return }
             Task {
-                _ = await LiveCredentialSelfHeal.run(diagnosticLog: self.paths.root.appendingPathComponent("native-switch.log"))
+                await self.attemptLiveCredentialSelfHeal()
                 // Waking is also a sharp signal that usage data may be
                 // stale (the poll loop paused for the whole sleep). Throttled
                 // like the popover-open trigger — see refreshUsageIfNeeded().
@@ -145,7 +155,7 @@ final class AppState {
         ) { [weak self] _ in
             guard let self else { return }
             Task {
-                _ = await LiveCredentialSelfHeal.run(diagnosticLog: self.paths.root.appendingPathComponent("native-switch.log"))
+                await self.attemptLiveCredentialSelfHeal()
                 await self.refreshUsageIfNeeded()
             }
         }
@@ -375,6 +385,31 @@ final class AppState {
         await usageStore.refresh(accounts: await usageInputs(due))
     }
 
+    /// Spends this launch's one *interactive* `LiveCredentialSelfHeal`
+    /// attempt, if it hasn't been spent already — the caller-owned gate that
+    /// `LiveCredentialSelfHeal.run`'s own doc comment (review finding C1)
+    /// says it needs, since its non-interactive `isTrusted` probe alone
+    /// doesn't stop every call site below from retrying the *interactive*
+    /// repair read forever under persistent distrust.
+    ///
+    /// Checked-and-set with no `await` between them, mirroring
+    /// `refreshUsageIfNeeded()`'s `refreshInFlight` guard above: `start()`'s
+    /// launch-time call, the wake observer, and the screen-unlock observer
+    /// can all reach here, and wake+unlock firing together (e.g. waking a
+    /// machine that also auto-unlocks) must not both win the one attempt.
+    /// Every call after the first (from any site) still runs `run()` for its
+    /// non-interactive `isTrusted` probe and diagnostic logging — only the
+    /// interactive repair-read branch is actually skipped.
+    private func attemptLiveCredentialSelfHeal() async {
+        let allowInteractive = !liveCredentialSelfHealAttempted
+        if allowInteractive {
+            liveCredentialSelfHealAttempted = true
+        }
+        _ = await LiveCredentialSelfHeal.run(
+            diagnosticLog: paths.root.appendingPathComponent("native-switch.log"),
+            allowInteractive: allowInteractive)
+    }
+
     /// Pairs each account with its token via StatusBarCore's
     /// `TokenResolution` (see its doc comment for the isActive gating this
     /// replays). Each account's decision is additionally logged to
@@ -388,44 +423,40 @@ final class AppState {
     /// Awaits `selfHealTask` first (a no-op once it's already finished, which
     /// it normally is well before any of this function's three call sites
     /// run) — see the comment where that task is created in `start()`. Then
-    /// runs a *fresh* `LiveCredentialSelfHeal.run` on every call, not just at
-    /// launch: for a native multi-account setup every account's `oauthURL`
-    /// is a `/dev/null` placeholder (see `NativeAccountStore`), so the active
-    /// account's token comes from the Keychain fallback on every single poll
-    /// cycle, not just occasionally. `claude` itself rewrites the shared
-    /// `"Claude Code-credentials"` item via a plain `security
-    /// add-generic-password -U` on its own login/refresh flows (see
-    /// `LiveCredentialWriter`'s doc comment) — that resets the ACL to a
-    /// default single-writer state that no longer trusts this app, and
-    /// nothing repaired that mid-session before this change, since self-heal
-    /// only ran once per launch. `run` itself stays cheap when trust is
-    /// intact — it probes non-interactively via `isTrusted` and only
-    /// rewrites the ACL when that probe fails — so calling it here doesn't
-    /// re-litigate the "not on a timer" concern in its own doc comment; it
-    /// only pays the ACL-rewrite cost exactly when an external reset has
-    /// actually happened, right before the read that would otherwise pop a
-    /// permission dialog.
+    /// calls `attemptLiveCredentialSelfHeal()` on every invocation, not just
+    /// at launch: for a native multi-account setup every account's
+    /// `oauthURL` is a `/dev/null` placeholder (see `NativeAccountStore`), so
+    /// the active account's token comes from the Keychain fallback on every
+    /// single poll cycle, not just occasionally, and `claude` itself
+    /// rewrites the shared `"Claude Code-credentials"` item via a plain
+    /// `security add-generic-password -U` on its own login/refresh flows
+    /// (see `LiveCredentialWriter`'s doc comment) — that resets the ACL to a
+    /// default single-writer state that no longer trusts this app. But
+    /// `attemptLiveCredentialSelfHeal()` only lets *one* of those calls
+    /// (whichever gets there first this launch — here or an observer) run
+    /// the actual *interactive* repair read; every other call, from here or
+    /// anywhere else, only gets the non-interactive `isTrusted` probe (see
+    /// review finding C1). A poll cycle that hits distrust after the one
+    /// attempt is spent still surfaces the resulting non-interactive
+    /// Keychain failure the same way it always did — it just won't itself
+    /// pop a permission dialog to fix it.
+    ///
+    /// Per-account vault self-heal (finding #2's proactive half) used to run
+    /// here too, once per inactive account per launch. Removed per review
+    /// finding M2: this function runs on `@MainActor` from the background
+    /// poll timer, and vault self-heal's repair read is interactive — with N
+    /// untrusted inactive accounts that was N sequential blocking prompts
+    /// fired by a timer, not a user action. `NativeAccountSwitcher.switchTo`
+    /// already does the same repair on its own vault read before every
+    /// user-initiated switch (see its doc comment), which is sufficient and
+    /// always user-initiated; an inactive account's usage may simply not
+    /// resolve from the vault until the user switches to it at least once
+    /// per launch, which is the accepted tradeoff.
     private func usageInputs(
         _ accounts: [Account]
     ) async -> [(account: Account, token: String?)] {
         _ = await selfHealTask?.value
-        _ = await LiveCredentialSelfHeal.run(
-            diagnosticLog: paths.root.appendingPathComponent("native-switch.log"))
-        // Finding #2's proactive half: TokenResolution.resolve falls back to
-        // the vault for every inactive account on every poll cycle (see its
-        // doc comment), and that read is now non-interactive by default —
-        // so an inactive account whose vault item isn't yet trusted would
-        // otherwise just silently fail forever. Bounded to once per account
-        // per launch (not every cycle) for the same "don't reset an existing
-        // Always Allow grant on a timer" reason LiveCredentialSelfHeal's own
-        // doc comment gives.
-        let diagnosticLog = paths.root.appendingPathComponent("native-switch.log")
-        for account in AccountVaultSelfHeal.accountsNeedingSelfHeal(
-            accounts, alreadyAttempted: vaultSelfHealAttempted
-        ) {
-            _ = AccountVaultSelfHeal.run(accountId: account.id, diagnosticLog: diagnosticLog)
-            vaultSelfHealAttempted.insert(account.id)
-        }
+        await attemptLiveCredentialSelfHeal()
         var diagnostics: [TokenResolutionDiagnostics.Entry] = []
         let result = accounts.map { account -> (account: Account, token: String?) in
             let (token, source) = TokenResolution.resolve(account: account)

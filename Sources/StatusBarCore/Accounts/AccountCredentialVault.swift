@@ -120,6 +120,25 @@ public enum AccountCredentialVault {
         return (data, capturedStatus)
     }
 
+    /// Minor review finding m2: `NativeAccountSwitcher.switchTo`'s
+    /// backup-read-miss diagnostic used to just say "no backup credentials
+    /// found" with no indication of *why* — genuinely absent vs. blocked
+    /// because the process isn't trusted yet. Mirrors
+    /// `repairReadWithStatus`'s tuple-return convention so that call site can
+    /// log the real `KeychainStatus` instead of a guess.
+    public static func readStatus(
+        accountId: String,
+        reader: (String, String) -> (data: Data?, status: KeychainStatus) = defaultReaderWithStatus
+    ) -> KeychainStatus {
+        reader(service, accountId).status
+    }
+
+    public static func defaultReaderWithStatus(service: String, accountId: String) -> (data: Data?, status: KeychainStatus) {
+        var capturedStatus = KeychainStatus.itemNotFound
+        let data = performRead(service: service, accountId: accountId, onStatus: { capturedStatus = $0 })
+        return (data, capturedStatus)
+    }
+
     public static func defaultWriter(data: Data, service: String, accountId: String) -> Bool {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -155,20 +174,27 @@ public enum AccountCredentialVault {
         performRepairWrite(data: data, service: service, accountId: accountId, trustedPaths: trustedPaths)
     }
 
+    /// Review finding M1: this used to be delete-then-add. If `add` failed
+    /// right after `delete` had already succeeded, the vault backup was
+    /// permanently destroyed with no rollback — worse than leaving the stale
+    /// item in place. Now update-then-add, mirroring
+    /// `LiveCredentialWriter.performWrite`'s already-correct contract: try
+    /// `update` first; fall back to `add` only when `update` reports the
+    /// item doesn't exist yet; any other update failure returns false
+    /// without ever calling `add` or touching the existing item.
     static func performRepairWrite(
         data: Data,
         service: String,
         accountId: String,
         trustedPaths: [String],
         add: (CFDictionary, UnsafeMutablePointer<CFTypeRef?>?) -> OSStatus = SecItemAdd,
-        delete: (CFDictionary) -> OSStatus = SecItemDelete
+        update: (CFDictionary, CFDictionary) -> OSStatus = SecItemUpdate
     ) -> Bool {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrLabel as String: service,
             kSecAttrAccount as String: accountId,
         ]
-        _ = delete(query as CFDictionary)
 
         let trustedApps: [SecTrustedApplication] = trustedPaths.compactMap { path in
             var app: SecTrustedApplication?
@@ -178,13 +204,27 @@ public enum AccountCredentialVault {
         var access: SecAccess?
         SecAccessCreate(service as CFString, trustedApps as CFArray, &access)
 
-        var attributes = query
-        attributes[kSecValueData as String] = data
-        attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        attributes[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIAllow
+        var newAttributes: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+            kSecUseAuthenticationUI as String: kSecUseAuthenticationUIAllow,
+        ]
         if let access {
-            attributes[kSecAttrAccess as String] = access
+            newAttributes[kSecAttrAccess as String] = access
         }
-        return add(attributes as CFDictionary, nil) == errSecSuccess
+
+        let updateStatus = update(query as CFDictionary, newAttributes as CFDictionary)
+        if updateStatus == errSecSuccess {
+            return true
+        }
+        guard updateStatus == errSecItemNotFound else {
+            return false
+        }
+
+        var addAttributes = query
+        for (key, value) in newAttributes {
+            addAttributes[key] = value
+        }
+        return add(addAttributes as CFDictionary, nil) == errSecSuccess
     }
 }
