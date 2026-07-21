@@ -22,12 +22,17 @@ public enum SessionAggregator {
             let url = dir.appendingPathComponent(name)
             guard let data = try? Data(contentsOf: url),
                   let record = try? SessionRecord.decode(data) else {
-                if isMtimePrunable(url, now: now) {
+                if isMtimePrunable(url, now: now, fm: fm) {
                     try? fm.removeItem(at: url)
                 }
                 continue
             }
             if now.timeIntervalSince(record.updatedAt) > pruneAfter {
+                // Deleting here (and above) touches the sessions dir, which
+                // fires the DirectoryWatcher's `.write` event and re-triggers
+                // `reaggregate()` — a harmless, self-terminating extra rescan
+                // since the next pass finds nothing left to prune. Known and
+                // accepted.
                 try? fm.removeItem(at: url)
                 continue
             }
@@ -38,8 +43,8 @@ public enum SessionAggregator {
         return sessions.sorted { $0.startedAt < $1.startedAt }
     }
 
-    private static func isMtimePrunable(_ url: URL, now: Date) -> Bool {
-        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+    private static func isMtimePrunable(_ url: URL, now: Date, fm: FileManager) -> Bool {
+        guard let attrs = try? fm.attributesOfItem(atPath: url.path),
               let mtime = attrs[.modificationDate] as? Date else { return false }
         return now.timeIntervalSince(mtime) > pruneAfter
     }

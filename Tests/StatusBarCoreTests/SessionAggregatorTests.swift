@@ -95,6 +95,33 @@ private func record(id: String, state: SessionState, startedAt: Date,
         #expect(!FileManager.default.fileExists(atPath: url.path))
     }
 
+    @Test func pruneRetentionExceedsStaleWindow() {
+        // Pruning's correctness argument is that it only ever deletes records
+        // already excluded from the UI by `staleAfter` — that silently breaks
+        // if someone retunes either constant so this ordering no longer holds.
+        #expect(SessionAggregator.pruneAfter > SessionAggregator.staleAfter)
+    }
+
+    @Test func hiddenButNotYetPrunedRecordSurvivesOnDisk() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("prune-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let now = Date()
+
+        // Older than staleAfter (hidden from the returned list) but within
+        // pruneAfter (not yet deleted) — this band must survive on disk.
+        let age = (SessionAggregator.staleAfter + SessionAggregator.pruneAfter) / 2
+        let hidden = record(id: "hidden", state: .idle,
+                            startedAt: now.addingTimeInterval(-age),
+                            updatedAt: now.addingTimeInterval(-age))
+        let url = dir.appendingPathComponent("hidden.json")
+        try AtomicFile.write(hidden.encoded(), to: url)
+
+        let sessions = SessionAggregator.loadSessions(from: dir, now: now)
+        #expect(sessions.isEmpty)
+        #expect(FileManager.default.fileExists(atPath: url.path))
+    }
+
     @Test func keepsFreshMalformedFile() throws {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("prune-\(UUID().uuidString)", isDirectory: true)
