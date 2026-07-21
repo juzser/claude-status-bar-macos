@@ -126,6 +126,40 @@ private func makeTempDir() -> URL {
         }
         #expect(result == nil)
     }
+
+    @Test func reportsStatusThroughOnStatusCallback() {
+        var reported: KeychainStatus?
+        _ = AccountDiscovery.performKeychainRead(
+            service: "Claude Code-credentials",
+            onStatus: { reported = $0 }
+        ) { _, _ in errSecInteractionNotAllowed }
+        #expect(reported == .interactionNotAllowed)
+    }
+}
+
+/// `allowInteractive: true` is the one deliberate opt-in to a potential
+/// Keychain prompt: only `LiveCredentialWriter.repairRead` (self-heal's own
+/// repair path) sets it, never the routine `defaultKeychainReader` above.
+@Suite struct InteractiveKeychainReaderQueryTests {
+    @Test func omitsAuthenticationUIFailWhenInteractive() {
+        var capturedQuery: [String: Any]?
+        _ = AccountDiscovery.performKeychainRead(
+            service: "Claude Code-credentials", allowInteractive: true
+        ) { query, _ in
+            capturedQuery = query as? [String: Any]
+            return errSecItemNotFound
+        }
+        #expect(capturedQuery?[kSecUseAuthenticationUI as String] == nil)
+    }
+
+    @Test func defaultInteractiveKeychainReaderDelegatesToPerformKeychainReadWithInteractionAllowed() {
+        // Exercised indirectly: defaultInteractiveKeychainReader has no
+        // injectable seam of its own (it's the production entry point), so
+        // this only confirms it compiles and returns nil against a real,
+        // presumably-absent test service rather than crashing.
+        let result = AccountDiscovery.defaultInteractiveKeychainReader(service: "com.claude-status-bar.does-not-exist-test-only")
+        #expect(result == nil)
+    }
 }
 
 @Suite struct EmailAddressTests {

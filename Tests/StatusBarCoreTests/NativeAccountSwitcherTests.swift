@@ -163,6 +163,61 @@ import Testing
         #expect(liveOauthBlock == Data("current-oauth".utf8))
     }
 
+    /// Finding #2's other half: `readVaultBackup` (via `AccountCredentialVault
+    /// .defaultReader`) is now non-interactive, so a switch to an account
+    /// whose vault item isn't yet trusted would otherwise just fail outright.
+    /// `switchTo` runs `vaultSelfHeal` for the *target* account first so
+    /// trust gets (re-)established, on a controlled and logged path, before
+    /// the backup read that actually needs it.
+    @Test func vaultSelfHealRunsForTargetAccountBeforeReadingBackup() async {
+        let state = makeState()
+        var selfHealedAccountId: String?
+        var readVaultBackupCalledAfterSelfHeal = false
+
+        let switcher = NativeAccountSwitcher(
+            stateFile: URL(fileURLWithPath: "/dev/null"),
+            diagnosticLog: nil,
+            readVaultBackup: { id in
+                readVaultBackupCalledAfterSelfHeal = (selfHealedAccountId == id)
+                return CredentialBackup(liveCredentials: Data("target".utf8), oauthAccountBlock: nil)
+            },
+            writeVaultBackup: { _, _ in true },
+            readLiveCredentials: { Data("current".utf8) },
+            writeLiveCredentials: { _ in true },
+            readLiveOauthBlock: { nil },
+            writeLiveOauthBlock: { _ in true },
+            loadState: { _ in state },
+            saveState: { _, _ in true },
+            vaultSelfHeal: { id in selfHealedAccountId = id; return true }
+        )
+
+        let result = await switcher.switchTo(account: account("native-1", state: state))
+        #expect(result)
+        #expect(selfHealedAccountId == "native-1")
+        #expect(readVaultBackupCalledAfterSelfHeal)
+    }
+
+    @Test func vaultSelfHealDoesNotRunForAlreadyActiveAccountNoOp() async {
+        let state = makeState()
+        var selfHealCalled = false
+        let switcher = NativeAccountSwitcher(
+            stateFile: URL(fileURLWithPath: "/dev/null"),
+            diagnosticLog: nil,
+            readVaultBackup: { _ in nil },
+            writeVaultBackup: { _, _ in false },
+            readLiveCredentials: { nil },
+            writeLiveCredentials: { _ in false },
+            readLiveOauthBlock: { nil },
+            writeLiveOauthBlock: { _ in false },
+            loadState: { _ in state },
+            saveState: { _, _ in false },
+            vaultSelfHeal: { _ in selfHealCalled = true; return true }
+        )
+        let result = await switcher.switchTo(account: account("native-0", state: state))
+        #expect(result)
+        #expect(selfHealCalled == false)
+    }
+
     @Test func stateSaveFailureAfterSuccessfulLiveSwapReturnsFalse() async {
         let state = makeState()
         let switcher = NativeAccountSwitcher(

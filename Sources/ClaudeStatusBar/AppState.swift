@@ -61,6 +61,17 @@ final class AppState {
     /// does, matching the other loop `Task`s in `start()` which also run for
     /// the app's lifetime with no explicit teardown.
     private var wakeObserver: NSObjectProtocol?
+    /// Screen unlock is the other sharp, cheap signal (alongside wake) that
+    /// the live item's ACL may have been reset without this app's knowledge
+    /// (Finding #4) — e.g. a reboot or fast-user-switch doesn't fire
+    /// `didWakeNotification` but does unlock the screen right before the
+    /// user is likely to invoke `claude`.
+    private var screenUnlockObserver: NSObjectProtocol?
+    /// Per-account "attempted this launch" set for `AccountVaultSelfHeal`
+    /// (Finding #2's proactive half) — see `AccountVaultSelfHeal
+    /// .accountsNeedingSelfHeal`'s doc comment for why this is scoped per
+    /// account rather than a single launch-wide flag.
+    private var vaultSelfHealAttempted: Set<String> = []
 
     private let credentialsFile = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".claude/.credentials.json")
@@ -119,6 +130,22 @@ final class AppState {
                 // Waking is also a sharp signal that usage data may be
                 // stale (the poll loop paused for the whole sleep). Throttled
                 // like the popover-open trigger — see refreshUsageIfNeeded().
+                await self.refreshUsageIfNeeded()
+            }
+        }
+        // Finding #4: screen unlock, observed the same way — reboot and
+        // fast-user-switch land here without ever firing
+        // `didWakeNotification`, and both are exactly the kind of event
+        // that can precede an ACL reset going unnoticed until the next
+        // interactive-capable read. `DistributedNotificationCenter` (not
+        // `NSWorkspace`) because `com.apple.screenIsUnlocked` is a
+        // system-wide distributed notification, not a workspace one.
+        screenUnlockObserver = DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("com.apple.screenIsUnlocked"), object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            Task {
+                _ = await LiveCredentialSelfHeal.run(diagnosticLog: self.paths.root.appendingPathComponent("native-switch.log"))
                 await self.refreshUsageIfNeeded()
             }
         }
@@ -384,6 +411,21 @@ final class AppState {
         _ = await selfHealTask?.value
         _ = await LiveCredentialSelfHeal.run(
             diagnosticLog: paths.root.appendingPathComponent("native-switch.log"))
+        // Finding #2's proactive half: TokenResolution.resolve falls back to
+        // the vault for every inactive account on every poll cycle (see its
+        // doc comment), and that read is now non-interactive by default —
+        // so an inactive account whose vault item isn't yet trusted would
+        // otherwise just silently fail forever. Bounded to once per account
+        // per launch (not every cycle) for the same "don't reset an existing
+        // Always Allow grant on a timer" reason LiveCredentialSelfHeal's own
+        // doc comment gives.
+        let diagnosticLog = paths.root.appendingPathComponent("native-switch.log")
+        for account in AccountVaultSelfHeal.accountsNeedingSelfHeal(
+            accounts, alreadyAttempted: vaultSelfHealAttempted
+        ) {
+            _ = AccountVaultSelfHeal.run(accountId: account.id, diagnosticLog: diagnosticLog)
+            vaultSelfHealAttempted.insert(account.id)
+        }
         var diagnostics: [TokenResolutionDiagnostics.Entry] = []
         let result = accounts.map { account -> (account: Account, token: String?) in
             let (token, source) = TokenResolution.resolve(account: account)

@@ -15,6 +15,40 @@ public enum LiveCredentialWriter {
         reader(service)
     }
 
+    /// Self-heal's own repair read — deliberately interactive (via
+    /// `AccountDiscovery.defaultInteractiveKeychainReader`), unlike `read`
+    /// above. `LiveCredentialSelfHeal.run` only reaches this after its own
+    /// non-interactive `isAlreadyTrusted` probe has already failed, so this
+    /// is the one place a Keychain prompt firing here is both expected and
+    /// legitimate: without it, the previous default (`read`, i.e. the same
+    /// non-interactive query the trust probe uses) always failed identically
+    /// right after the probe did, and the ACL-repair write beneath it could
+    /// never run.
+    ///
+    /// Never wire this as the default for a routine/poll-driven read —
+    /// `NativeAccountSwitcher`/`AccountCapture`'s user-initiated call sites
+    /// are the only other legitimate callers (see their own doc comments).
+    public static func repairRead(reader: (String) -> Data? = AccountDiscovery.defaultInteractiveKeychainReader) -> Data? {
+        reader(service)
+    }
+
+    /// Status-carrying counterpart to `repairRead`, used by
+    /// `LiveCredentialSelfHeal` so a failed repair read can be logged with
+    /// *why* it failed (item genuinely missing vs. still not trusted) rather
+    /// than a single generic "no live credentials found" message.
+    public static func repairReadWithStatus(
+        reader: (String) -> (data: Data?, status: KeychainStatus) = defaultInteractiveReaderWithStatus
+    ) -> (data: Data?, status: KeychainStatus) {
+        reader(service)
+    }
+
+    public static func defaultInteractiveReaderWithStatus(service: String) -> (data: Data?, status: KeychainStatus) {
+        var capturedStatus = KeychainStatus.itemNotFound
+        let data = AccountDiscovery.performKeychainRead(
+            service: service, allowInteractive: true, onStatus: { capturedStatus = $0 })
+        return (data, capturedStatus)
+    }
+
     /// Non-interactive probe: can the current process already read the live
     /// item without macOS needing to show a Keychain prompt? Uses
     /// `kSecUseAuthenticationUIFail` so an untrusted caller gets
@@ -73,6 +107,7 @@ public enum LiveCredentialWriter {
         trustedPaths: [String],
         service: String,
         account: String,
+        onStatus: (KeychainStatus) -> Void = { _ in },
         update: (CFDictionary, CFDictionary) -> OSStatus = SecItemUpdate,
         add: (CFDictionary, UnsafeMutablePointer<CFTypeRef?>?) -> OSStatus = SecItemAdd
     ) -> Bool {
@@ -94,12 +129,19 @@ public enum LiveCredentialWriter {
         var newAttributes: [String: Any] = [
             kSecValueData as String: data,
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+            // This write only ever runs from a user-initiated path (self-heal's
+            // repair branch, gated behind its own non-interactive trust probe,
+            // or an explicit account switch) — never a background poll — so an
+            // interactive prompt here, if macOS decides it needs one, is
+            // expected rather than a bug.
+            kSecUseAuthenticationUI as String: kSecUseAuthenticationUIAllow,
         ]
         if let access {
             newAttributes[kSecAttrAccess as String] = access
         }
 
         let updateStatus = update(query as CFDictionary, newAttributes as CFDictionary)
+        onStatus(KeychainStatus(updateStatus))
         if updateStatus == errSecSuccess {
             return true
         }
@@ -111,7 +153,9 @@ public enum LiveCredentialWriter {
         for (key, value) in newAttributes {
             addAttributes[key] = value
         }
-        return add(addAttributes as CFDictionary, nil) == errSecSuccess
+        let addStatus = add(addAttributes as CFDictionary, nil)
+        onStatus(KeychainStatus(addStatus))
+        return addStatus == errSecSuccess
     }
 
     public static func writeValue(
@@ -136,6 +180,7 @@ public enum LiveCredentialWriter {
         data: Data,
         service: String,
         account: String,
+        onStatus: (KeychainStatus) -> Void = { _ in },
         update: (CFDictionary, CFDictionary) -> OSStatus = SecItemUpdate,
         add: (CFDictionary, UnsafeMutablePointer<CFTypeRef?>?) -> OSStatus = SecItemAdd
     ) -> Bool {
@@ -149,9 +194,13 @@ public enum LiveCredentialWriter {
         let newAttributes: [String: Any] = [
             kSecValueData as String: data,
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+            // Same reasoning as performWrite: only ever runs from a
+            // user-initiated account switch, never a background poll.
+            kSecUseAuthenticationUI as String: kSecUseAuthenticationUIAllow,
         ]
 
         let updateStatus = update(query as CFDictionary, newAttributes as CFDictionary)
+        onStatus(KeychainStatus(updateStatus))
         if updateStatus == errSecSuccess {
             return true
         }
@@ -163,7 +212,9 @@ public enum LiveCredentialWriter {
         for (key, value) in newAttributes {
             addAttributes[key] = value
         }
-        return add(addAttributes as CFDictionary, nil) == errSecSuccess
+        let addStatus = add(addAttributes as CFDictionary, nil)
+        onStatus(KeychainStatus(addStatus))
+        return addStatus == errSecSuccess
     }
 
     /// Non-nil entries only — `claudePath` is nil when `claude`'s binary

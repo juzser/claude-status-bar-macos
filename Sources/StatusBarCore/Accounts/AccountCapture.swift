@@ -14,6 +14,7 @@ public actor AccountCapture {
     private var baseline: CredentialBackup?
     private let storeFile: URL
     private let readLiveCredentials: () -> Data?
+    private let readLiveCredentialsForCapture: () -> Data?
     private let readLiveOauthBlock: () -> Data?
     private let vaultWrite: (String, CredentialBackup) -> Bool
     private let loadState: (URL) -> NativeAccountState
@@ -22,6 +23,13 @@ public actor AccountCapture {
     public init(
         storeFile: URL,
         readLiveCredentials: @escaping () -> Data? = { LiveCredentialWriter.read() },
+        // beginCapture() is always called right before this app itself
+        // launches `claude /login` (AppState.beginAddAccount()/.beginRelogin())
+        // — user-initiated, same reasoning NativeAccountSwitcher.switchTo's
+        // readLiveCredentials default uses (Finding #1). checkForNewLogin()
+        // is polled (popover-open + a ~60s ticker) and must stay
+        // non-interactive, so it keeps `readLiveCredentials` above.
+        readLiveCredentialsForCapture: @escaping () -> Data? = { LiveCredentialWriter.repairRead() },
         readLiveOauthBlock: @escaping () -> Data? = { NativeAccountSwitcher.defaultReadLiveOauthBlock() },
         vaultWrite: @escaping (String, CredentialBackup) -> Bool = { AccountCredentialVault.write(accountId: $0, $1) },
         loadState: @escaping (URL) -> NativeAccountState = NativeAccountStore.load,
@@ -31,6 +39,7 @@ public actor AccountCapture {
     ) {
         self.storeFile = storeFile
         self.readLiveCredentials = readLiveCredentials
+        self.readLiveCredentialsForCapture = readLiveCredentialsForCapture
         self.readLiveOauthBlock = readLiveOauthBlock
         self.vaultWrite = vaultWrite
         self.loadState = loadState
@@ -40,7 +49,7 @@ public actor AccountCapture {
     /// Snapshots the currently-live credentials as the "before" baseline.
     /// Call right before launching `claude /login` in Terminal.
     public func beginCapture() {
-        guard let creds = readLiveCredentials() else { baseline = nil; return }
+        guard let creds = readLiveCredentialsForCapture() else { baseline = nil; return }
         baseline = CredentialBackup(liveCredentials: creds, oauthAccountBlock: readLiveOauthBlock())
     }
 

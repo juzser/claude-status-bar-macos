@@ -12,6 +12,7 @@ public actor NativeAccountSwitcher {
     private let diagnosticLog: URL?
     private let readVaultBackup: (String) -> CredentialBackup?
     private let writeVaultBackup: (String, CredentialBackup) -> Bool
+    private let vaultSelfHeal: (String) -> Bool
     private let readLiveCredentials: () -> Data?
     private let writeLiveCredentials: (Data) async -> Bool
     private let readLiveOauthBlock: () -> Data?
@@ -24,7 +25,12 @@ public actor NativeAccountSwitcher {
         diagnosticLog: URL? = AppPaths().root.appendingPathComponent("native-switch.log"),
         readVaultBackup: @escaping (String) -> CredentialBackup? = { AccountCredentialVault.read(accountId: $0) },
         writeVaultBackup: @escaping (String, CredentialBackup) -> Bool = { AccountCredentialVault.write(accountId: $0, $1) },
-        readLiveCredentials: @escaping () -> Data? = { LiveCredentialWriter.read() },
+        // Deliberately the interactive repair read (mirrors
+        // LiveCredentialSelfHeal's `read`): switchTo is always
+        // user-initiated, never a background poll, so a prompt here — to
+        // read the *current* live credentials before backing them up — is
+        // expected rather than a bug.
+        readLiveCredentials: @escaping () -> Data? = { LiveCredentialWriter.repairRead() },
         writeLiveCredentials: @escaping (Data) async -> Bool = { data in
             LiveCredentialWriter.writeValue(data)
         },
@@ -36,12 +42,14 @@ public actor NativeAccountSwitcher {
         loadState: @escaping (URL) -> NativeAccountState = NativeAccountStore.load,
         saveState: @escaping (NativeAccountState, URL) -> Bool = { state, file in
             (try? NativeAccountStore.save(state, to: file)) != nil
-        }
+        },
+        vaultSelfHeal: @escaping (String) -> Bool = { AccountVaultSelfHeal.run(accountId: $0) }
     ) {
         self.stateFile = stateFile
         self.diagnosticLog = diagnosticLog
         self.readVaultBackup = readVaultBackup
         self.writeVaultBackup = writeVaultBackup
+        self.vaultSelfHeal = vaultSelfHeal
         self.readLiveCredentials = readLiveCredentials
         self.writeLiveCredentials = writeLiveCredentials
         self.readLiveOauthBlock = readLiveOauthBlock
@@ -53,6 +61,12 @@ public actor NativeAccountSwitcher {
     public func switchTo(account: Account) async -> Bool {
         let state = loadState(stateFile)
         guard state.activeId != account.id else { return true }
+
+        // Re-establish trust for the target account's vault item before
+        // reading it: readVaultBackup is now non-interactive (Finding #2),
+        // so without this an account whose backup isn't yet trusted would
+        // just fail here on every switch attempt.
+        _ = vaultSelfHeal(account.id)
 
         guard let backup = readVaultBackup(account.id) else {
             writeDiagnostic("switch to \(account.id) failed: no backup credentials found")

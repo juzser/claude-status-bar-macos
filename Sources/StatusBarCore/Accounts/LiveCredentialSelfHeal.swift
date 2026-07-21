@@ -24,7 +24,14 @@ public enum LiveCredentialSelfHeal {
     public static func run(
         diagnosticLog: URL? = nil,
         isTrusted: () -> Bool = { LiveCredentialWriter.isAlreadyTrusted() },
-        read: () -> Data? = { LiveCredentialWriter.read() },
+        // Deliberately the *interactive* repair read (Finding #1): this
+        // branch only runs after the non-interactive `isTrusted` probe above
+        // has already failed, so a prompt firing here — to (re-)establish
+        // trust — is expected. The previous default routed through the same
+        // non-interactive read the probe uses, which meant it always failed
+        // identically right after the probe did, and this write/ACL-repair
+        // step could never run.
+        read: () -> (data: Data?, status: KeychainStatus) = { LiveCredentialWriter.repairReadWithStatus() },
         write: (Data, [String]) -> Bool = { data, paths in LiveCredentialWriter.write(data, trustedPaths: paths) },
         trustedPaths: () async -> [String] = {
             let claudePath = await ClaudeBinaryLocator.shared.resolve()
@@ -35,8 +42,10 @@ public enum LiveCredentialSelfHeal {
             writeDiagnostic("self-heal ACL skipped: already trusted", to: diagnosticLog)
             return true
         }
-        guard let data = read() else {
-            writeDiagnostic("self-heal ACL skipped: no live credentials found", to: diagnosticLog)
+        let (data, status) = read()
+        guard let data else {
+            writeDiagnostic("self-heal ACL skipped: no live credentials found (status: \(status.description))",
+                            to: diagnosticLog)
             return false
         }
         let succeeded = write(data, await trustedPaths())

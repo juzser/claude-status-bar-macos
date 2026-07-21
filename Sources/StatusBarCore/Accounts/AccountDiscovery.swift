@@ -90,31 +90,50 @@ public enum AccountDiscovery {
         performKeychainRead(service: service)
     }
 
-    /// Uses `kSecUseAuthenticationUIFail` so this read can never pop an
-    /// interactive Keychain prompt — unlike `LiveCredentialWriter.read`
-    /// (self-heal's own repair path, which legitimately needs to prompt to
-    /// (re-)establish trust), this read backs the periodic usage-fetch path
-    /// and runs on every poll cycle from several independent, uncoordinated
-    /// timer loops in `AppState` (`pollTask`, `captureTask`,
-    /// `wakeObserver`). Without this, a burst of those loops firing at once
-    /// right after wake — each still needing to establish trust — could each
-    /// independently trigger their own "ClaudeStatusBar wants to access..."
-    /// dialog. `copyMatching` is injectable so tests can capture the query
+    /// The one deliberate opt-in to a potential interactive Keychain prompt:
+    /// only `LiveCredentialWriter.repairRead` (self-heal's own repair path,
+    /// which legitimately needs to prompt to (re-)establish trust) uses
+    /// this. Everything else — including `defaultKeychainReader` above —
+    /// stays non-interactive.
+    public static func defaultInteractiveKeychainReader(service: String) -> Data? {
+        performKeychainRead(service: service, allowInteractive: true)
+    }
+
+    /// Uses `kSecUseAuthenticationUIFail` by default so this read can never
+    /// pop an interactive Keychain prompt — this read backs the periodic
+    /// usage-fetch path and runs on every poll cycle from several
+    /// independent, uncoordinated timer loops in `AppState` (`pollTask`,
+    /// `captureTask`, `wakeObserver`). Without this, a burst of those loops
+    /// firing at once right after wake — each still needing to establish
+    /// trust — could each independently trigger their own "ClaudeStatusBar
+    /// wants to access..." dialog.
+    ///
+    /// `allowInteractive` is the escape hatch for the one caller that's
+    /// allowed to prompt (see `defaultInteractiveKeychainReader`).
+    /// `onStatus` reports the raw `OSStatus` (classified via
+    /// `KeychainStatus`) so callers that need to log *why* a read failed —
+    /// not just that it did — can, without ever logging the credential data
+    /// itself. `copyMatching` is injectable so tests can capture the query
     /// without touching the real Keychain.
     static func performKeychainRead(
         service: String,
+        allowInteractive: Bool = false,
+        onStatus: (KeychainStatus) -> Void = { _ in },
         copyMatching: (CFDictionary, UnsafeMutablePointer<CFTypeRef?>?) -> OSStatus = SecItemCopyMatching
     ) -> Data? {
-        let query: [String: Any] = [
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrLabel as String: service,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
-            kSecUseAuthenticationUI as String: kSecUseAuthenticationUIFail,
         ]
+        if !allowInteractive {
+            query[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail
+        }
         var item: CFTypeRef?
-        guard copyMatching(query as CFDictionary, &item) == errSecSuccess,
-              let data = item as? Data else { return nil }
+        let status = copyMatching(query as CFDictionary, &item)
+        onStatus(KeychainStatus(status))
+        guard status == errSecSuccess, let data = item as? Data else { return nil }
         return data
     }
 }
