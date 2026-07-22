@@ -143,9 +143,11 @@ private struct AccountsTab: View {
 
     var body: some View {
         Form {
-            Toggle("Use token-slayer backend (when installed)", isOn: $settings.useTokenSlayer)
-            Text(backendStatusText)
-                .font(.caption).foregroundStyle(.secondary)
+            if appState.tokenSlayerInstalled {
+                Toggle("Use token-slayer backend", isOn: $settings.useTokenSlayer)
+                Text(backendStatusText)
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             if let slayerErrorMessage = appState.slayerErrorMessage {
                 Text(slayerErrorMessage).font(.caption).foregroundStyle(.orange)
             }

@@ -41,6 +41,15 @@ final class AppState {
     /// isn't installed). Drives the UI's subtle backend indicator.
     private(set) var slayerBinaryPath: String?
     var usingSlayerBackend: Bool { slayerBinaryPath != nil }
+    /// Whether the token-slayer CLI is installed on this machine, resolved
+    /// once at launch independently of `settings.useTokenSlayer`. Drives
+    /// whether the Settings toggle is offered at all — a toggle for a backend
+    /// that isn't installed is just a dead control. Like every other
+    /// token-slayer path, resolution is cached for the process lifetime
+    /// (TokenSlayerCLI.resolveBinary), so installing the CLI mid-session
+    /// needs a relaunch to be picked up — the same tradeoff the rest of the
+    /// slayer integration already makes.
+    private(set) var tokenSlayerInstalled = false
     /// Message from the most recent failed slayer `list`/`status` read —
     /// surfaced as a small footer in Settings; nil once a call succeeds. A
     /// `sessions` failure does *not* set this: it only backs the secondary
@@ -128,6 +137,18 @@ final class AppState {
         started = true
         try? paths.ensureDirs()
         usageStore.loadCache()
+        // Resolved once here, unconditionally — regardless of whether
+        // `settings.useTokenSlayer` is on — so the Settings toggle knows
+        // whether to offer itself at all even while the setting is off (see
+        // `tokenSlayerInstalled`'s doc comment). Backgrounded like
+        // `selfHealTask` below since `resolveBinary()` may shell out and
+        // start() itself must stay synchronous; `TokenSlayerCLI.resolveBinary`
+        // caches for the actor's lifetime, so this is reused rather than
+        // duplicated by the later `resolveSlayerBinaryIfEnabled()` calls.
+        Task { [weak self] in
+            guard let self else { return }
+            self.tokenSlayerInstalled = await self.tokenSlayerCLI.resolveBinary() != nil
+        }
         // Native discovery is skipped up front when the setting says slayer
         // mode will own this session — avoids both an unnecessary native
         // Keychain-adjacent read and the cosmetic flash of native accounts
