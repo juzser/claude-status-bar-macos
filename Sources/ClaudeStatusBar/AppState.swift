@@ -30,8 +30,11 @@ final class AppState {
     /// with `switchFailedAccountId`. Nil for a native-mode failure — the UI
     /// falls back to its existing generic message in that case.
     private(set) var switchFailedMessage: String?
-    /// 1 Hz heartbeat for the menu bar elapsed counter; advances only while busy.
-    private(set) var tick = Date()
+    /// Animation heartbeat for the menu bar label; advances only while busy.
+    /// A separate observable object rather than a property here on purpose —
+    /// see `TickClock`. `let`, so reading `appState.clock` registers no
+    /// observation dependency of its own; only reading `clock.now` does.
+    let clock = TickClock()
     private(set) var updateAvailable: ReleaseInfo?
     let usageStore: UsageStore
     let paths: AppPaths
@@ -76,8 +79,6 @@ final class AppState {
     private var reaggregateTask: Task<Void, Never>?
     private var updateCheckTask: Task<Void, Never>?
     private var captureTask: Task<Void, Never>?
-    private var tickTask: Task<Void, Never>?
-    private var tickInterval: Duration = .seconds(1)
     private var pollCycle = 0
     private var started = false
     /// Guards `refreshUsageIfNeeded()` against the popover-open and
@@ -284,31 +285,12 @@ final class AppState {
         }
     }
 
-    /// Drives the elapsed counter and shimmer while a session is busy — 30 fps
-    /// when activity text is on the bar (the shimmer needs sub-second frames),
-    /// 1 Hz for icon-only/compact styles. A plain task loop, not TimelineView:
-    /// a periodic TimelineView in the MenuBarExtra label re-anchors its
-    /// schedule at `.now` on every label re-render, so the first entry is
-    /// always already due — the main thread spins at 100% CPU and the status
-    /// item never finishes appearing (observed on macOS 26).
+    /// Drives the elapsed counter and shimmer while a session is busy. The
+    /// cadence itself lives in `MenuBarTickRate` (pure and tested) and the
+    /// loop in `TickClock`; this only joins the two to the current state.
     private func updateTicker() {
-        if display?.busySince != nil {
-            let interval: Duration = displayStyle == .iconOnly || displayStyle == .compact
-                ? .seconds(1) : .milliseconds(33)
-            guard tickTask == nil || interval != tickInterval else { return }
-            tickTask?.cancel()
-            tickInterval = interval
-            tick = Date()
-            tickTask = Task { [weak self] in
-                while !Task.isCancelled {
-                    try? await Task.sleep(for: interval)
-                    self?.tick = Date()
-                }
-            }
-        } else {
-            tickTask?.cancel()
-            tickTask = nil
-        }
+        clock.retarget(milliseconds: MenuBarTickRate.milliseconds(
+            busy: display?.busySince != nil, style: displayStyle))
     }
 
     /// Called when the user picks a new message style: forget the no-repeat
@@ -556,7 +538,11 @@ final class AppState {
         sessionBilledAccounts = SlayerSessionJoin.billedAccounts(from: doc.sessions)
     }
 
-    var labelModel: MenuBarLabelModel {
+    /// `now` is a parameter rather than a read of the ticker: the caller
+    /// (`MenuBarLabelView`) already holds the frame's `clock.now`, and taking
+    /// it here would make every reader of `labelModel` an observer of the
+    /// clock — which is the coupling `TickClock` exists to break.
+    func labelModel(now: Date) -> MenuBarLabelModel {
         let activeUsage = accounts.first(where: \.isActive).flatMap { usageStore.states[$0.id] }
             ?? accounts.first.flatMap { usageStore.states[$0.id] }
         return MenuBarText.model(display: display, usage: activeUsage,
@@ -564,7 +550,7 @@ final class AppState {
                                  showElapsed: settings.showElapsedOnBar,
                                  yellowAt: yellowAt, redAt: redAt,
                                  verb: currentVerb, messageStyle: settings.messageStyle,
-                                 now: tick)
+                                 now: now)
     }
 
     /// Poll-cadence entry point. Slayer mode: one `status --json` call
