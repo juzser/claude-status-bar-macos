@@ -12,17 +12,18 @@ struct ClaudeStatusBarApp: App {
         NSApplication.shared.setActivationPolicy(.accessory)
     }
 
+    // Nothing observable is read in this body — `appState` is handed to the
+    // two child views and unwrapped there. That matters: this body used to
+    // read the tick (via `appState.labelModel` and `appState.tick`), which
+    // made the whole scene invalid on every animation frame. Measured on a
+    // standalone MenuBarExtra probe over 5 s at the same cadence: 72 scene
+    // body evaluations that way versus 1 with the reads pushed down into
+    // `MenuBarLabelView`, which re-rendered the same 72 times either way.
     var body: some Scene {
         MenuBarExtra {
             PopoverView(appState: appState)
         } label: {
-            MenuBarLabelView(model: appState.labelModel,
-                             icon: StatusIcon.icon(for: appState.display),
-                             shimmerPhase: ShimmerText.phase(at: appState.tick),
-                             normalColor: NSColor(hex: appState.settings.normalColorHex) ?? .systemGreen,
-                             yellowColor: NSColor(hex: appState.settings.yellowColorHex) ?? .systemYellow,
-                             redColor: NSColor(hex: appState.settings.redColorHex) ?? .systemRed,
-                             animateText: appState.settings.textAnimationEnabled)
+            MenuBarLabelView(appState: appState)
                 .onAppear {
                     appState.start()
                     Task { await appState.refreshUsageNow() }
