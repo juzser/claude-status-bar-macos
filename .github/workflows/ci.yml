@@ -13,3 +13,5 @@ jobs:
         run: |
           swift build
           ./scripts/hook-integration-test.sh
+      - name: Signing argv test
+        run: make signing-test
