@@ -1,0 +1,15 @@
+// Fixture (NEVER COMPILED): `Process.init()` plus a component-built
+// `/usr/bin` URL -- the ordinary API spelling a naive token blacklist
+// misses (round-9 finding CODEX-F5). Criterion 6 probe (e) must FAIL
+// ((e-1) and (e-2)).
+import Foundation
+
+enum FixtureProcessInitNoParen {
+    static func defaultVerify(_ path: String) -> Bool {
+        let process = Process.init()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin").appendingPathComponent("codesign")
+        process.arguments = ["--verify", path]
+        try? process.run()
+        return process.terminationStatus == 0
+    }
+}

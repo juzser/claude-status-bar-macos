@@ -1,0 +1,12 @@
+// Fixture (NEVER COMPILED): the substring probe (b) requires a correct
+// test to carry. Probe (h) must PASS -- the occurrence below is inert
+// string data, not an executable reference.
+import Testing
+@testable import StatusBarCore
+
+@Suite struct FixtureProbeBAsRequired {
+    @Test func sinkDefaultsToProductionHandler() {
+        let expectedDeclaration = "onReject: (String, String) -> Void = TrustedApplicationGate.defaultOnReject"
+        #expect(expectedDeclaration.contains("defaultOnReject"))
+    }
+}

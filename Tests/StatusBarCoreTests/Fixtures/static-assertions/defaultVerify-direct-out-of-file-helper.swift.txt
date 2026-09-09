@@ -1,0 +1,7 @@
+// Fixture (NEVER COMPILED): defaultVerify calls a helper declared in
+// ANOTHER file. Criterion 6 probe (e-3) must FAIL at depth one.
+enum FixtureDefaultVerifyDirectOutOfFileHelper {
+    static func defaultVerify(_ path: String) -> Bool {
+        SpawningHelperDeclaredElsewhere.run(path)
+    }
+}

@@ -1,0 +1,12 @@
+// Fixture (NEVER COMPILED): an executable call to the production default
+// outside any string literal. Probe (h) must FAIL on this line, and again
+// -- per the v13 correction to step (2b) -- on the interpolation call on
+// the extended line below (round-17 finding S2-4).
+import Testing
+@testable import StatusBarCore
+
+func rejectsAndAlsoLogsDirectly(path: String, reason: String, p: String, r: String) {
+    TrustedApplicationGate.defaultOnReject(path, reason)
+    let s = "\(TrustedApplicationGate.defaultOnReject(p, r))"
+    #expect(s.isEmpty == false)
+}
