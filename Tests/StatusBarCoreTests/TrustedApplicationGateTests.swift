@@ -271,7 +271,11 @@ import Testing
     /// Probes (b) and (g) share this shape: isolate the sink's parameter
     /// list, assert the pinned default appears there exactly once, and
     /// assert the member occurs exactly once in the whole comment/literal-
-    /// stripped file (excluding a dead reference elsewhere).
+    /// stripped file (excluding a dead reference elsewhere). Criterion 8's
+    /// v13 correction: this is a DOUBLE COUNT against three verdict texts,
+    /// not a single assertion against C_post alone -- C_post == 1 with
+    /// C_pre > C_post is a disclosed NOTE, not a failure, and it must be
+    /// reachable, not merely asserted away.
     private func assertDefaultParameter(
         marker: String, defaultText: String, member: String, file: String
     ) throws {
@@ -283,8 +287,34 @@ import Testing
         }
         #expect(SourceTextMatcher.occurrenceCount(of: defaultText, in: slice) == 1,
                 "\(file): expected \(defaultText) exactly once in \(marker) parameter list")
-        #expect(SourceTextMatcher.occurrenceCount(of: member, in: procedure.postLiteralStripNormalized) == 1,
-                "\(file): expected \(member) exactly once outside comments/literals")
+
+        let cPost = SourceTextMatcher.occurrenceCount(of: member, in: procedure.postLiteralStripNormalized)
+        let cPre = SourceTextMatcher.occurrenceCount(of: member, in: procedure.preLiteralStripNormalized)
+
+        if cPost != 1 {
+            let sites = SourceTextMatcher.occurrences(of: member, in: procedure.literalStrippedWithNewlines)
+                .map { "\(file):\($0.line)" }.joined(separator: ", ")
+            let message = "Expectation failed: \(member) occurs \(cPost) times as an executable reference in Sources/ (\(sites) each), expected exactly 1"
+            Issue.record("\(message)")
+            return
+        }
+
+        if cPre > cPost {
+            let postCounts = SourceTextMatcher.occurrenceLineCounts(of: member, in: procedure.literalStrippedWithNewlines)
+            let preCounts = SourceTextMatcher.occurrenceLineCounts(of: member, in: procedure.commentStrippedWithNewlines)
+            let literalOnlySites = preCounts.keys.sorted().compactMap { line -> String? in
+                let extra = preCounts[line, default: 0] - postCounts[line, default: 0]
+                return extra > 0 ? "\(file):\(line)" : nil
+            }.joined(separator: ", ")
+            let note = "note: \(member) also occurs \(cPre - cPost) time(s) inside a string literal in Sources/ (\(literalOnlySites)): inert match data, not counted, not a failure"
+            // Disclosed, not failed: this is the note the v13 correction
+            // makes reachable, and it must never fail the probe.
+            print(note)
+            return
+        }
+
+        // PASS: silence is the verdict text, per criterion 8's v13 correction.
+        _ = "ok: \(member) occurs exactly 1 time as an executable reference in Sources/"
     }
 
     /// Probe (b): the default is `TrustedApplicationGate.defaultOnReject`,
@@ -463,6 +493,9 @@ enum SourceTextMatcher {
         /// After step (2) comment/dead-code strip and step (3) whitespace
         /// normalisation -- string literals intact. Basis for C_pre.
         let preLiteralStripNormalized: String
+        /// (2) output, original newlines preserved, so a caller can report
+        /// which line a literal-only occurrence falls on for C_pre.
+        let commentStrippedWithNewlines: String
         /// After step (2), step (2b) string-literal strip (interpolation
         /// segments RETAINED, per the v13 correction) and step (3). Basis
         /// for C_post -- the count this task's probes actually bind.
@@ -478,9 +511,20 @@ enum SourceTextMatcher {
         let (literalStripped, unresolved) = stripStringLiterals(commentStripped)
         return Procedure(
             preLiteralStripNormalized: normalizeWhitespace(commentStripped),
+            commentStrippedWithNewlines: commentStripped,
             postLiteralStripNormalized: normalizeWhitespace(literalStripped),
             literalStrippedWithNewlines: literalStripped,
             unresolved: unresolved)
+    }
+
+    /// Per-line occurrence counts of `needle` in `text`, for diffing C_pre
+    /// against C_post line-by-line to locate a literal-only occurrence.
+    static func occurrenceLineCounts(of needle: String, in text: String) -> [Int: Int] {
+        var counts: [Int: Int] = [:]
+        for occurrence in occurrences(of: needle, in: text) {
+            counts[occurrence.line, default: 0] += 1
+        }
+        return counts
     }
 
     static func occurrenceCount(of needle: String, in text: String) -> Int {
