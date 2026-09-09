@@ -47,10 +47,16 @@ c1c2() {
   if has '[@]}' "$nl" || has '[*]}' "$nl"; then
     echo "set-key-partition-list argv at $file:$lno is array-assembled: v2 grades this line as literal text"; return 1
   fi
+  local lmsg="" smsg=""
   if ! has ' -l "$SIGNING_IDENTITY_NAME" ' "$nl" && ! has ' -l $SIGNING_IDENTITY_NAME ' "$nl"; then
-    echo "no -l in set-key-partition-list argv: the partition list is unbounded"; return 1
+    lmsg="no -l in set-key-partition-list argv: the partition list is unbounded"
   fi
-  has ' -s ' "$nl" && { echo "found -s in set-key-partition-list argv: -s takes no operand and swallows the next word"; return 1; }
+  has ' -s ' "$nl" && smsg="found -s in set-key-partition-list argv: -s takes no operand and swallows the next word"
+  if [[ -n "$lmsg" || -n "$smsg" ]]; then
+    [[ -n "$lmsg" ]] && echo "$lmsg"
+    [[ -n "$smsg" ]] && echo "$smsg"
+    return 1
+  fi
   if ! has ' -S apple-tool:,apple:,codesign: ' "$nl" || [[ "$(grep -oF ' -S ' <<<"$nl" | wc -l)" -ne 1 ]]; then
     echo "set-key-partition-list argv has no single -S apple-tool:,apple:,codesign: operand"; return 1
   fi
@@ -69,6 +75,29 @@ sed -E 's/-l "\$SIGNING_IDENTITY_NAME"/-s/' "$IDFILE" > "$FS"
 FOUT="$(c1c2 "$FS")"; FRC=$?
 [[ "$FRC" -ne 0 && "$FOUT" == *"no -l in set-key-partition-list argv"* ]]
 check "fixture F-s: -s in place of -l is rejected with the unbounded-partition-list null" $?
+[[ "$FRC" -ne 0 && "$FOUT" == *"found -s in set-key-partition-list argv"* ]]
+check "fixture F-s: -s in place of -l also surfaces criterion 2's own -s null" $?
+rm -rf "$FDIR"
+
+FDIR="$(mktemp -d)"; FSCAP="$FDIR/fS.sh"
+sed -E 's/ -S apple-tool:,apple:,codesign://' "$IDFILE" > "$FSCAP"
+FOUT="$(c1c2 "$FSCAP")"; FRC=$?
+[[ "$FRC" -ne 0 && "$FOUT" == *"has no single -S apple-tool:,apple:,codesign: operand"* ]]
+check "fixture F-S: missing -S operand is rejected" $?
+rm -rf "$FDIR"
+
+FDIR="$(mktemp -d)"; FK="$FDIR/fk.sh"
+sed -E 's/set-key-partition-list /set-key-partition-list -k /' "$IDFILE" > "$FK"
+FOUT="$(c1c2 "$FK")"; FRC=$?
+[[ "$FRC" -ne 0 && "$FOUT" == *"found -k in set-key-partition-list argv"* ]]
+check "fixture F-k: -k inserted after the command is rejected" $?
+rm -rf "$FDIR"
+
+FDIR="$(mktemp -d)"; FTAIL="$FDIR/ftail.sh"
+sed -E 's/-l "\$SIGNING_IDENTITY_NAME" "\$LOGIN_KEYCHAIN"/"\$LOGIN_KEYCHAIN" -l "\$SIGNING_IDENTITY_NAME"/' "$IDFILE" > "$FTAIL"
+FOUT="$(c1c2 "$FTAIL")"; FRC=$?
+[[ "$FRC" -ne 0 && "$FOUT" == *'does not end in "$LOGIN_KEYCHAIN": keychain is not the trailing positional'* ]]
+check "fixture F-tail: keychain and -l swapped so keychain is no longer trailing is rejected" $?
 rm -rf "$FDIR"
 
 # ---------------------------------------------------------------------
@@ -190,6 +219,13 @@ FOUT="$(c4 "$FC1")"; FRC=$?
 check "fixture C1: concatenated -test suffix on the dry-run assignment is rejected" $?
 rm -rf "$FDIR"
 
+FDIR="$(mktemp -d)"; FC2="$FDIR/c2.sh"
+sed -E "s/SIGNING_IDENTITY_NAME=\"(\\\$\{CSB_SIGNING_IDENTITY_NAME-ClaudeStatusBar Local Signing\})\"/SIGNING_IDENTITY_NAME='\1'/" "$IDFILE" > "$FC2"
+FOUT="$(c4 "$FC2")"; FRC=$?
+[[ "$FRC" -ne 0 && "$FOUT" == *"not the single permitted assignment"* ]]
+check "fixture C2: single-quoted expansion of the dry-run assignment is rejected" $?
+rm -rf "$FDIR"
+
 # ---------------------------------------------------------------------
 # Criterion 5: the dry-run default. (a)-(c) exercise the indirection alone.
 # ---------------------------------------------------------------------
@@ -242,6 +278,25 @@ FR="$(guard_form "$APPFILE" "$AGUARD_NO" 'echo "make-app: refusing to build a re
   'if [ "${CSB_SIGNING_DRY_RUN:-}" = "1" ] ' 'if [ "${CSB_SIGNING_DRY_RUN-}" = "1" ] ')"; FRC=$?
 if [[ "$FRC" -eq 0 ]]; then echo "ok: make-app refusal guard refuses: condition, stderr diagnostic, non-zero exit"; else echo "guard cannot refuse: $FR"; fi
 check "(e) static part two: make-app refusal guard form refuses" $FRC
+
+FDIR="$(mktemp -d)"
+awk -v g="$AGUARD_NO" 'NR==g{print ": csb-fixture-silent-statement"} {print}' "$APPFILE" > "$FDIR/m1.sh"
+M1OUT="$(guard_first "$FDIR/m1.sh" '^[[:space:]]*if[[:space:]].*CSB_SIGNING_DRY_RUN' "${APP_PRE[@]}")"; M1RC=$?
+[[ "$M1RC" -ne 0 && "$M1OUT" == BAD:* ]]
+check "fixture M1: silent statement above the guard breaks first-construct placement" $?
+
+awk -v g="$AGUARD_NO" 'NR>=g && /^[[:space:]]*exit [0-9]+$/ {next} {print}' "$APPFILE" > "$FDIR/m2.sh"
+M2OUT="$(guard_form "$FDIR/m2.sh" "$AGUARD_NO" 'echo "make-app: refusing to build a real artifact with CSB_SIGNING_DRY_RUN set" >&2' \
+  'if [ "${CSB_SIGNING_DRY_RUN:-}" = "1" ] ' 'if [ "${CSB_SIGNING_DRY_RUN-}" = "1" ] ')"; M2RC=$?
+[[ "$M2RC" -ne 0 && "$M2OUT" == "BADCOUNT" ]]
+check "fixture M2: make-app guard exit removed is rejected as present-but-not-refusing" $?
+
+sed -E "${AGUARD_NO}s/= \"1\" \]/!= \"1\" ]/" "$APPFILE" > "$FDIR/m3.sh"
+M3OUT="$(guard_form "$FDIR/m3.sh" "$AGUARD_NO" 'echo "make-app: refusing to build a real artifact with CSB_SIGNING_DRY_RUN set" >&2' \
+  'if [ "${CSB_SIGNING_DRY_RUN:-}" = "1" ] ' 'if [ "${CSB_SIGNING_DRY_RUN-}" = "1" ] ')"; M3RC=$?
+[[ "$M3RC" -ne 0 && "$M3OUT" == BADCOND:* ]]
+check "fixture M3: inverted guard condition is rejected" $?
+rm -rf "$FDIR"
 
 if [[ "$RC" -eq 0 && "$FRC" -eq 0 && "$IDENTITY_PRESENT" -eq 1 ]]; then
   if [[ -e dist ]]; then find dist -depth -exec rm -r -f {} + 2>/dev/null; fi
@@ -307,6 +362,10 @@ sed -E 's/--timestamp --sign "\$SIGNING_IDENTITY" "\$APP"$/--timestamp=none --si
 APPFILE="$FDIR/e2.sh"; FOUT="$(c89)"; FRC=$?; APPFILE="$APPFILE_SAVE"
 [[ "$FRC" -ne 0 && "$FOUT" == *"without --timestamp"* ]]
 check "fixture E2: --timestamp=none on the outer signing line is rejected" $?
+sed -E 's/(--timestamp --sign "\$SIGNING_IDENTITY" "\$APP")$/\1 || true/' "$APPFILE_SAVE" > "$FDIR/e1.sh"
+APPFILE="$FDIR/e1.sh"; FOUT="$(c89)"; FRC=$?; APPFILE="$APPFILE_SAVE"
+[[ "$FRC" -ne 0 && "$FOUT" == *"timestamp failure is swallowed"* ]]
+check "fixture E1: || true on the outer signing line is rejected as a swallowed failure" $?
 rm -rf "$FDIR"
 
 echo "---"
