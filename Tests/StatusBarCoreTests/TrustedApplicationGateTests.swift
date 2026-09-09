@@ -227,31 +227,169 @@ import Testing
 
     /// Probe (h): no test may hold an executable reference to
     /// `TrustedApplicationGate.defaultOnReject` — a rejection under the
-    /// default appends to the operator's real `AppPaths().root`. This
-    /// scans every OTHER `.swift` file under `Tests/StatusBarCoreTests/`
-    /// after stripping comments and string literals, and asserts the
-    /// token occurs zero times as an executable reference. This file
-    /// itself is excluded from the scan: it is the detector, and its own
-    /// source necessarily spells the token out (in the needle constant and
-    /// in doc comments describing it), which is not the hazard this probe
-    /// guards against. Residual: a token count over stripped source,
-    /// disclosed in the task result — it cannot see a reference reached
-    /// through a stored alias, key path or reflection.
+    /// default appends to the operator's real `AppPaths().root`. Retro-fit
+    /// (round B) to the corrected step (2b): this scans every OTHER
+    /// `.swift` file under `Tests/StatusBarCoreTests/` (excluding the
+    /// fixtures directory, whose specimens are never-compiled match data
+    /// graded separately) via `ProbeHCheck`, which runs the pinned
+    /// `SourceTextMatcher` procedure including the v13 interpolation-
+    /// retention correction, and asserts the token occurs zero times as an
+    /// executable reference. This file itself is excluded from the scan:
+    /// it is the detector, and its own source necessarily spells the token
+    /// out (in the needle constant and in doc comments describing it),
+    /// which is not the hazard this probe guards against. Residual: a
+    /// token count over stripped source, disclosed in the task result —
+    /// it cannot see a reference reached through a stored alias, key path
+    /// or reflection.
     @Test func probeHNoTestHoldsExecutableReferenceToDefaultOnReject() throws {
         let selfURL = URL(fileURLWithPath: #filePath)
         let testsDir = selfURL.deletingLastPathComponent()
         let files = try FileManager.default.contentsOfDirectory(
             at: testsDir, includingPropertiesForKeys: nil)
-            .filter { $0.pathExtension == "swift" && $0.lastPathComponent != selfURL.lastPathComponent }
-        let needle = "TrustedApplicationGate.defaultOnReject"
+            .filter {
+                $0.pathExtension == "swift" && $0.lastPathComponent != selfURL.lastPathComponent
+            }
         for file in files {
             let text = try String(contentsOf: file, encoding: .utf8)
-            let stripped = text
-                .replacingOccurrences(of: #"//[^\n]*"#, with: " ", options: .regularExpression)
-                .replacingOccurrences(of: #""(?:\\.|[^"\\])*""#, with: "\"\"", options: .regularExpression)
-            #expect(stripped.contains(needle) == false,
-                    "\(file.lastPathComponent) holds an executable reference to \(needle)")
+            let (refs, unresolved) = ProbeHCheck.executableReferences(text)
+            #expect(unresolved.isEmpty, "\(file.lastPathComponent): unresolved subprocess/interpolation site(s)")
+            #expect(refs.isEmpty,
+                    "\(file.lastPathComponent) holds \(refs.count) executable reference(s) to TrustedApplicationGate.defaultOnReject at line(s) \(refs.map(\.line))")
         }
+    }
+
+    /// Repo-relative `Sources/StatusBarCore/Accounts/` directory, resolved
+    /// from `#filePath` the same way probe (f) and the spawn-token probe
+    /// already do.
+    private var sourcesAccountsDir: URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("../Sources/StatusBarCore/Accounts")
+            .standardizedFileURL
+    }
+
+    /// Probes (b) and (g) share this shape: isolate the sink's parameter
+    /// list, assert the pinned default appears there exactly once, and
+    /// assert the member occurs exactly once in the whole comment/literal-
+    /// stripped file (excluding a dead reference elsewhere).
+    private func assertDefaultParameter(
+        marker: String, defaultText: String, member: String, file: String
+    ) throws {
+        let text = try String(contentsOf: sourcesAccountsDir.appendingPathComponent(file), encoding: .utf8)
+        let procedure = SourceTextMatcher.run(text)
+        guard let slice = SourceTextMatcher.declarationSlice(startingAt: marker, in: procedure.postLiteralStripNormalized) else {
+            Issue.record("\(file): could not isolate \(marker) declaration slice")
+            return
+        }
+        #expect(SourceTextMatcher.occurrenceCount(of: defaultText, in: slice) == 1,
+                "\(file): expected \(defaultText) exactly once in \(marker) parameter list")
+        #expect(SourceTextMatcher.occurrenceCount(of: member, in: procedure.postLiteralStripNormalized) == 1,
+                "\(file): expected \(member) exactly once outside comments/literals")
+    }
+
+    /// Probe (b): the default is `TrustedApplicationGate.defaultOnReject`,
+    /// at both call sites.
+    @Test func probeBOnRejectDefaultsToProductionSinkAtBothSites() throws {
+        try assertDefaultParameter(
+            marker: "static func performWrite(",
+            defaultText: "onReject: (String, String) -> Void = TrustedApplicationGate.defaultOnReject",
+            member: "TrustedApplicationGate.defaultOnReject",
+            file: "LiveCredentialWriter.swift")
+        try assertDefaultParameter(
+            marker: "static func performRepairWrite(",
+            defaultText: "onReject: (String, String) -> Void = TrustedApplicationGate.defaultOnReject",
+            member: "TrustedApplicationGate.defaultOnReject",
+            file: "AccountCredentialVault.swift")
+    }
+
+    /// Probe (g): the verifier default is `TrustedApplicationGate.defaultVerify`,
+    /// at both call sites — the parameter that decides whether SEC-1 is
+    /// actually closed, since the production callers never pass `verify:`
+    /// explicitly.
+    @Test func probeGVerifyDefaultsToProductionGateAtBothSites() throws {
+        try assertDefaultParameter(
+            marker: "static func performWrite(",
+            defaultText: "verify: (String) -> Bool = TrustedApplicationGate.defaultVerify",
+            member: "TrustedApplicationGate.defaultVerify",
+            file: "LiveCredentialWriter.swift")
+        try assertDefaultParameter(
+            marker: "static func performRepairWrite(",
+            defaultText: "verify: (String) -> Bool = TrustedApplicationGate.defaultVerify",
+            member: "TrustedApplicationGate.defaultVerify",
+            file: "AccountCredentialVault.swift")
+    }
+
+    /// Probe (d): wired at both sites — with an explicit recorder, a
+    /// rejected path records a line containing the rejected path and the
+    /// reason, at site 1 (`performWrite`) and site 2 (`performRepairWrite`).
+    @Test func probeDBothSitesRecordRejectedPathAndReason() {
+        var site1: [(path: String, reason: String)] = []
+        let ok1 = LiveCredentialWriter.performWrite(
+            data: Data("token".utf8),
+            trustedPaths: ["/tmp/rejected-site-1"],
+            service: LiveCredentialWriter.service,
+            account: "ser",
+            verify: { _ in false },
+            onReject: { path, reason in site1.append((path, reason)) },
+            update: { _, _ in errSecSuccess },
+            add: { _, _ in errSecSuccess }
+        )
+        #expect(ok1 == false)
+        #expect(site1.count == 1)
+        #expect(site1.first?.path == "/tmp/rejected-site-1")
+        #expect(site1.first?.reason.isEmpty == false)
+
+        var site2: [(path: String, reason: String)] = []
+        let ok2 = AccountCredentialVault.performRepairWrite(
+            data: Data("token".utf8),
+            service: AccountCredentialVault.service,
+            accountId: "ser",
+            trustedPaths: ["/tmp/rejected-site-2"],
+            verify: { _ in false },
+            onReject: { path, reason in site2.append((path, reason)) },
+            add: { _, _ in errSecSuccess },
+            update: { _, _ in errSecSuccess }
+        )
+        #expect(ok2 == false)
+        #expect(site2.count == 1)
+        #expect(site2.first?.path == "/tmp/rejected-site-2")
+        #expect(site2.first?.reason.isEmpty == false)
+    }
+
+    // MARK: - Criterion 9: the test-side security inventory, over the real tree
+
+    /// `SecurityInventoryCheck`, wired to the real `Tests/StatusBarCoreTests/`
+    /// tree rather than a fixture specimen — every `.swift` file except the
+    /// never-compiled `Fixtures/static-assertions/**` specimens themselves
+    /// (which are match data, not code the inventory scans) must pass.
+    @Test func realTestTreeSecurityInventoryHasNoMutatingSubcommand() throws {
+        let testsDir = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        let fixturesDir = testsDir.appendingPathComponent("Fixtures/static-assertions").standardizedFileURL
+        guard let enumerator = FileManager.default.enumerator(
+            at: testsDir, includingPropertiesForKeys: nil) else {
+            Issue.record("could not enumerate \(testsDir.path)")
+            return
+        }
+        for case let file as URL in enumerator {
+            guard file.pathExtension == "swift" else { continue }
+            guard !file.standardizedFileURL.path.hasPrefix(fixturesDir.path) else { continue }
+            let text = try String(contentsOf: file, encoding: .utf8)
+            let verdict = SecurityInventoryCheck.check(text)
+            #expect(verdict == nil, "\(file.lastPathComponent): \(verdict ?? "")")
+        }
+    }
+
+    // MARK: - Criterion 12: the paired CI signing step, over the real workflow file
+
+    /// `CISigningStepCheck`, wired to the real `.github/workflows/ci.yml`
+    /// (read-only; the file is not in this task's claims).
+    @Test func realCiWorkflowHasPairedSigningArgvTestStep() throws {
+        let ciYML = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("../.github/workflows/ci.yml")
+            .standardizedFileURL
+        let text = try String(contentsOf: ciYML, encoding: .utf8)
+        #expect(CISigningStepCheck.check(text) == true)
     }
 
     // MARK: - Criterion 3 / nonfunctional clause 3: no subprocess in defaultVerify
@@ -354,6 +492,26 @@ enum SourceTextMatcher {
             range = found.upperBound..<text.endIndex
         }
         return count
+    }
+
+    /// Isolates a function declaration's parameter-list slice: scans
+    /// forward from the end of `marker` (which must end in `(`) with a
+    /// parenthesis-depth counter to the matching close paren. Used by
+    /// probes (b) and (g), which must locate a default value inside the
+    /// surrounding declaration rather than matching the whole file.
+    static func declarationSlice(startingAt marker: String, in text: String) -> String? {
+        guard let start = text.range(of: marker) else { return nil }
+        var depth = 0
+        var i = start.upperBound
+        while i < text.endIndex {
+            if text[i] == "(" { depth += 1 }
+            if text[i] == ")" {
+                if depth == 0 { return String(text[start.lowerBound..<text.index(after: i)]) }
+                depth -= 1
+            }
+            i = text.index(after: i)
+        }
+        return nil
     }
 
     /// Every occurrence of `needle`, each with the 1-based line it starts
@@ -577,8 +735,14 @@ enum SecurityInventoryCheck {
         let arguments: [String]
     }
 
+    /// Real-tree correction (round B): a plain `contains("Process(")` false
+    /// -positives on identifiers that merely end in "Process(", such as a
+    /// test function named `...LongRunningProcess()`. Require a
+    /// non-identifier character (or start of text) immediately before
+    /// "Process(" / "Process.init" so only an actual `Process` type
+    /// reference is flagged.
     private static func hasProcessConfig(_ sourceText: String) -> Bool {
-        sourceText.contains("Process(") || sourceText.contains("Process.init")
+        sourceText.range(of: #"(^|[^A-Za-z0-9_])Process(\(|\.init)"#, options: .regularExpression) != nil
     }
 
     private static func subprocessConfig(_ sourceText: String) -> Config? {
