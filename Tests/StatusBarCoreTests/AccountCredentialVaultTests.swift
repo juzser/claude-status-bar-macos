@@ -219,6 +219,7 @@ import Testing
         _ = AccountCredentialVault.performRepairWrite(
             data: Data("token".utf8), service: "svc", accountId: "acct",
             trustedPaths: ["/Applications/ClaudeStatusBar.app"],
+            verify: { _ in true },
             add: { attributes, _ in
                 capturedAttributes = attributes as? [String: Any]
                 return errSecSuccess
@@ -230,6 +231,58 @@ import Testing
         #expect(authUI == (kSecUseAuthenticationUIAllow as String))
         #expect(capturedAttributes?[kSecAttrAccessible as String] as? String
                 == (kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String))
+    }
+
+    // MARK: - SEC-1: performRepairWrite must gate trustedPaths through
+    // TrustedApplicationGate before naming them in the item's ACL — same
+    // contract as LiveCredentialWriter.performWrite, tested here
+    // independently since this is a separate sink.
+
+    @Test func performRepairWriteRefusesWriteWhenAllTrustedPathsAreRejected() {
+        var updateCalled = false
+        var addCalled = false
+        var rejected: [(String, String)] = []
+        let ok = AccountCredentialVault.performRepairWrite(
+            data: Data("token".utf8), service: "svc", accountId: "acct",
+            trustedPaths: ["/bad/one", "/bad/two"],
+            verify: { _ in false },
+            onReject: { path, reason in rejected.append((path, reason)) },
+            add: { _, _ in addCalled = true; return errSecSuccess },
+            update: { _, _ in updateCalled = true; return errSecSuccess }
+        )
+        #expect(ok == false)
+        #expect(updateCalled == false)
+        #expect(addCalled == false)
+        #expect(rejected.map(\.0) == ["/bad/one", "/bad/two"])
+    }
+
+    @Test func performRepairWriteProceedsWhenAllTrustedPathsAreApproved() {
+        var addCalled = false
+        let ok = AccountCredentialVault.performRepairWrite(
+            data: Data("token".utf8), service: "svc", accountId: "acct",
+            trustedPaths: ["/good/one"],
+            verify: { _ in true },
+            add: { _, _ in addCalled = true; return errSecSuccess },
+            update: { _, _ in errSecItemNotFound }
+        )
+        #expect(ok)
+        #expect(addCalled)
+    }
+
+    @Test func performRepairWriteFiltersRejectedPathsButKeepsApprovedOnes() {
+        var rejected: [String] = []
+        var addCalled = false
+        let ok = AccountCredentialVault.performRepairWrite(
+            data: Data("token".utf8), service: "svc", accountId: "acct",
+            trustedPaths: ["/good/path", "/bad/path"],
+            verify: { $0 == "/good/path" },
+            onReject: { path, _ in rejected.append(path) },
+            add: { _, _ in addCalled = true; return errSecSuccess },
+            update: { _, _ in errSecItemNotFound }
+        )
+        #expect(ok)
+        #expect(addCalled)
+        #expect(rejected == ["/bad/path"])
     }
 
     @Test func performRepairWriteReturnsFalseWhenAddFails() {
