@@ -7,6 +7,16 @@
 # than next to the executable — see the copy step below.
 set -euo pipefail
 
+# Refuse to build a real, signed artifact while the signing indirection is
+# in dry-run mode: a dry run only ever asserts on printed argv, never on a
+# real codesign result, and running it here would be silent no-op signing
+# rather than the refusal the dry-run mode promises.
+if [ "${CSB_SIGNING_DRY_RUN:-}" = "1" ]
+then
+  echo "make-app: refusing to build a real artifact with CSB_SIGNING_DRY_RUN set" >&2
+  exit 1
+fi
+
 cd "$(dirname "$0")/.."
 VERSION="${VERSION:-1.0.2}"
 APP="dist/ClaudeStatusBar.app"
@@ -77,5 +87,19 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 PLIST
 
 source scripts/ensure-signing-identity.sh
-codesign --force --deep --sign "$SIGNING_IDENTITY" "$APP"
+
+# Sign inside-out and without --deep: --deep re-signs nested code with
+# whatever ad-hoc/unhardened signature it finds baked into the SwiftPM
+# binary, which is how the previous single --force --deep --sign left the
+# final bundle unhardened (flags=0x0(none)) despite specifying a real
+# identity. Each executable gets --options runtime (hardened runtime) and
+# --timestamp explicitly, nested ones before the bundle that embeds them,
+# and set -euo pipefail above already makes a failed --timestamp fatal.
+for NESTED_BIN in "$APP/Contents/MacOS"/*; do
+  if [ "$(basename "$NESTED_BIN")" = "ClaudeStatusBar" ]; then
+    continue
+  fi
+  codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" "$NESTED_BIN"
+done
+codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" "$APP"
 echo "Built $APP (version $VERSION)"
