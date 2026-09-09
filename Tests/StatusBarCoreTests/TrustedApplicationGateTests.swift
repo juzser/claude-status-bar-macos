@@ -12,12 +12,25 @@ import Testing
     // extra step. Wrong verifier B: a check requiring an Apple/trusted
     // anchor or a Team Identifier, which REJECTS this repo's own
     // self-signed bundle (`TeamIdentifier=not set`) and breaks self-heal
-    // for every build this repo produces. `anchor exists` is the specimen
-    // that separates them: satisfied by any code with a certificate chain
-    // (self-signed included), unsatisfied by ad-hoc code (no chain at all).
+    // for every build this repo produces. `certificate leaf[subject.CN]
+    // exists` is the specimen that separates them: satisfied by any code
+    // whose leaf certificate has a subject (self-signed included),
+    // unsatisfied by ad-hoc code (no certificate at all).
+    //
+    // Deviation, disclosed as a spec_change_request: the task brief pins
+    // the literal `"anchor exists"`. That string is not valid Code
+    // Requirement Language: `codesign -v -R="anchor exists" <path>`
+    // reports "Requirement syntax error(s): line 1:1: unexpected token:
+    // anchor" against both a self-signed and an ad-hoc specimen (verified
+    // 2026-09-09), and `SecRequirementCreateWithString` returns
+    // errSecCSInvalidRequirement (-67052) for it, so a verifier built on
+    // it would reject every path unconditionally, including the
+    // self-signed identity this same criterion requires it to accept.
+    // `certificate leaf[subject.CN] exists` is the nearest valid
+    // expression with the accept/reject behavior the brief describes.
 
-    @Test func policyRequirementIsExactlyAnchorExists() {
-        #expect(TrustedApplicationGate.policyRequirement == "anchor exists")
+    @Test func policyRequirementIsExactlyPinnedLiteral() {
+        #expect(TrustedApplicationGate.policyRequirement == "certificate leaf[subject.CN] exists")
     }
 
     /// Builds a signed copy of the test process's own executable under

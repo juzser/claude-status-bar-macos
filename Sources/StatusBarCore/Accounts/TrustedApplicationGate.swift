@@ -9,18 +9,33 @@ import Security
 /// signature check at all, so whatever binary happened to sit at that path
 /// was granted read access to live Claude credentials.
 ///
-/// Policy: `anchor exists` — satisfied by any code carrying a certificate
-/// chain (including this repo's self-signed `ClaudeStatusBar Local
-/// Signing` leaf), unsatisfied by ad-hoc code, which carries no
-/// certificates at all. Deliberately does NOT require an Apple anchor or a
-/// Team Identifier: this app's own shipped bundle has
+/// Policy: `certificate leaf[subject.CN] exists` — satisfied by any code
+/// whose leaf certificate has a subject (including this repo's self-signed
+/// `ClaudeStatusBar Local Signing` leaf), unsatisfied by ad-hoc code, which
+/// carries no certificate at all. Deliberately does NOT require an Apple
+/// anchor or a Team Identifier: this app's own shipped bundle has
 /// `TeamIdentifier=not set` (measured 2026-09-07), so either of those
 /// would reject the app's own bundle and break self-heal for every build
 /// this repo produces.
+///
+/// Deviation from the task brief, disclosed as a spec_change_request: the
+/// brief pins the literal `"anchor exists"`. That string is not valid Code
+/// Requirement Language — `SecRequirementCreateWithString` returns
+/// errSecCSInvalidRequirement (-67052) for it, and `codesign -v
+/// -R="anchor exists" <path>` independently reports "Requirement syntax
+/// error(s): line 1:1: unexpected token: anchor" (verified 2026-09-09
+/// against both a self-signed and an ad-hoc specimen). A `defaultVerify`
+/// built on that literal would fail requirement creation for every path
+/// and therefore reject everything unconditionally, including the
+/// self-signed identity this same criterion requires it to accept —
+/// silently defeating self-heal rather than closing SEC-1. This literal,
+/// `certificate leaf[subject.CN] exists`, is the nearest valid expression
+/// with the same accept/reject behavior the brief describes (see
+/// TrustedApplicationGateTests.swift for the differential specimens).
 public enum TrustedApplicationGate {
     /// The exact requirement string passed to `SecRequirementCreateWithString`.
     /// Exposed so tests can assert the policy directly (criterion 6a).
-    public static let policyRequirement = "anchor exists"
+    public static let policyRequirement = "certificate leaf[subject.CN] exists"
 
     /// Full/strict validation: catches resource/nested-code tampering that
     /// a bare validity check would miss, and every architecture in a
