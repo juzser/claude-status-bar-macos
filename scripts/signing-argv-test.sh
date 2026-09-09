@@ -101,6 +101,60 @@ check "fixture F-tail: keychain and -l swapped so keychain is no longer trailing
 rm -rf "$FDIR"
 
 # ---------------------------------------------------------------------
+# The -l selector's two static preconditions (SEC-2, static): the p12 must
+# name the identity, and a non-matching selector must not abort the build.
+# ---------------------------------------------------------------------
+cname() {
+  local file="$1"
+  local m; m="$(grep -nE '^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*[[:space:]]+)?openssl[[:space:]]+pkcs12[[:space:]]+-export[[:space:]]' "$file" | head -1)"
+  [[ -z "$m" ]] && { echo "no openssl pkcs12 -export command found in $file"; return 1; }
+  local nl; nl="$(norm <<<"${m#*:}")"
+  if ! has ' -name "$SIGNING_IDENTITY_NAME" ' "$nl" && ! has ' -name $SIGNING_IDENTITY_NAME ' "$nl"; then
+    echo "p12 export at $file:${m%%:*} carries no -name: security import then leaves the imported key's print name at macOS's placeholder <key>, so -l \"\$SIGNING_IDENTITY_NAME\" selects no key and the partition list is never set"; return 1
+  fi
+  echo 'ok: the p12 export names the identity, so the imported key print name is what -l selects on'
+  return 0
+}
+OUT="$(cname "$IDFILE")"; RC=$?; echo "$OUT"
+check "the p12 export carries -name \"\$SIGNING_IDENTITY_NAME\", the print name -l selects on" $RC
+
+FDIR="$(mktemp -d)"; FN="$FDIR/fname.sh"
+sed -E 's/ -name "\$SIGNING_IDENTITY_NAME"//' "$IDFILE" > "$FN"
+FOUT="$(cname "$FN")"; FRC=$?
+[[ "$FRC" -ne 0 && "$FOUT" == *"carries no -name"* ]]
+check "fixture F-name: dropping -name from the p12 export is rejected with the placeholder-print-name null" $?
+rm -rf "$FDIR"
+
+cabort() {
+  local file="$1"
+  local ere='^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*[[:space:]]+)?security[[:space:]]+set-key-partition-list[[:space:]]'
+  local lno; lno="$(grep -nE "$ere" "$file" | head -1 | cut -d: -f1)"
+  [[ -z "$lno" ]] && { echo "no set-key-partition-list command found in $file"; return 1; }
+  local before after restore tail
+  before="$(sed -n "$((lno-1))p" "$file" | norm)"
+  after="$(sed -n "$((lno+1))p" "$file" | norm)"
+  restore="$(sed -n "$((lno+2))p" "$file" | norm)"
+  tail="$(sed -n "$((lno+3)),$((lno+7))p" "$file")"
+  if [[ "$before" != 'set +e ' || "$after" != 'CSB_PARTITION_RC=$? ' || "$restore" != 'set -e ' ]]; then
+    echo "set-key-partition-list at $file:$lno is not wrapped in set +e / rc capture / set -e: under set -euo pipefail a selector that matches no key aborts the script after the cert and key are already imported"; return 1
+  fi
+  if ! grep -qF 'CSB_PARTITION_RC' <<<"$tail" || ! grep -qF '>&2' <<<"$tail"; then
+    echo "the captured set-key-partition-list exit status is never reported on stderr at $file:$lno: a selector that matched nothing would fail silently"; return 1
+  fi
+  echo 'ok: a non-zero set-key-partition-list exit is reported on stderr and does not abort the build'
+  return 0
+}
+OUT="$(cabort "$IDFILE")"; RC=$?; echo "$OUT"
+check "a non-matching -l selector warns instead of aborting the build" $RC
+
+FDIR="$(mktemp -d)"; FA="$FDIR/fabort.sh"
+sed -E '/^[[:space:]]*set \+e[[:space:]]*$/d' "$IDFILE" > "$FA"
+FOUT="$(cabort "$FA")"; FRC=$?
+[[ "$FRC" -ne 0 && "$FOUT" == *"is not wrapped in set +e"* ]]
+check "fixture F-abort: removing the set +e wrapper is rejected as a partition-list call that can kill the build" $?
+rm -rf "$FDIR"
+
+# ---------------------------------------------------------------------
 # THE CONSTRUCT WALK + GUARD FORM at grep strength (criteria 3, 5(e)):
 # shared between ensure-signing-identity.sh's and make-app.sh's guards.
 # ---------------------------------------------------------------------
