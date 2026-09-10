@@ -86,8 +86,11 @@ features (e.g. exit tests, custom traits) when writing tests here.
   version-manager shims). When `LiveCredentialWriter`'s static candidates
   miss, it falls back to `command -v claude` run through
   `InteractiveShellRunner` (an interactive `zsh -ilc`, so it sees the same
-  PATH the user's own terminal would). This is what the Keychain ACL trusts
-  alongside this app's own bundle path — a static-list miss used to mean the
+  PATH the user's own terminal would). The resolved path is trusted
+  alongside this app's own bundle path only if it clears
+  `TrustedApplicationGate.defaultVerify` — a code-signature check, not a
+  location check, so a resolved path with no valid signature is dropped
+  rather than added to the Keychain ACL; a static-list miss used to mean the
   ACL only ever trusted the app, so every `claude` invocation re-triggered a
   Keychain "Allow" prompt; `LiveCredentialSelfHeal` also re-asserts this ACL
   once per launch so accounts that predate this fix stop re-prompting
@@ -95,9 +98,10 @@ features (e.g. exit tests, custom traits) when writing tests here.
 
 ## Workflow
 
-Feature branch → PR into `main` → CI (`swift test` + hook integration test,
-see `.github/workflows/ci.yml`) must pass → owner review and merge. Never
-push directly to `main`.
+Feature branch → PR into `main` → CI (`swift test`, hook integration test,
+and the signing argv test — see `.github/workflows/ci.yml`'s `Signing argv
+test` step, which runs `make signing-test`) must pass → owner review and
+merge. Never push directly to `main`.
 
 See `CONTRIBUTING.md` for the human-facing contribution guide (test
 expectations, code style, where to report bugs).

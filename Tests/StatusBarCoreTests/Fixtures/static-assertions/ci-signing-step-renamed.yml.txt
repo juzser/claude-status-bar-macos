@@ -1,0 +1,10 @@
+# Fixture (NEVER COMPILED): the same step, renamed -- criterion 12 must
+# FAIL, since a renamed step is exactly what task-1 having bounced looks
+# like from here.
+jobs:
+  build:
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Verify signing argv
+        run: make signing-test

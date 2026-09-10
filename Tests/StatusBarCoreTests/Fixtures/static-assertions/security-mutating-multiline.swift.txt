@@ -1,0 +1,12 @@
+// Fixture (NEVER COMPILED): the ordinary multiline `Process` shape a
+// one-line grep cannot see -- executable on one line, mutating arguments
+// on the next, run() on a third. Criterion 9's inventory must FAIL. This
+// is the exact shape a v8-era grep passed (round-9 finding CODEX-F3).
+import Foundation
+
+func mutatingSpecimen() {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+    process.arguments = ["create-keychain", "-p", "x", "/tmp/throwaway.keychain"]
+    try? process.run()
+}

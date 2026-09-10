@@ -1,0 +1,11 @@
+// Fixture (NEVER COMPILED): a literal `Process()` line -- criterion 6
+// probe (e-1) must FAIL.
+import Foundation
+
+enum FixtureProcessLiteralParen {
+    static func defaultVerify(_ path: String) -> Bool {
+        let process = Process()
+        _ = process
+        return true
+    }
+}

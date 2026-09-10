@@ -250,6 +250,74 @@ import Testing
         #expect(ok == false)
     }
 
+    // MARK: - performWrite + TrustedApplicationGate (SEC-1, task 2)
+
+    /// Site 1 of SEC-1: a rejected path must not become a `SecTrustedApplication`
+    /// at all, so the write is refused (zero `update`, zero `add` calls) and
+    /// the existing item's ACL is left untouched. Drives a rejection, so it
+    /// must pass an explicit `onReject` (nonfunctional clause 9).
+    @Test func performWriteRefusesWriteWhenAllTrustedPathsAreRejected() {
+        var updateCalls = 0
+        var addCalls = 0
+        var rejected: [(path: String, reason: String)] = []
+
+        let ok = LiveCredentialWriter.performWrite(
+            data: Data("token".utf8),
+            trustedPaths: ["/tmp/not-signed"],
+            service: LiveCredentialWriter.service,
+            account: "ser",
+            verify: { _ in false },
+            onReject: { path, reason in rejected.append((path, reason)) },
+            update: { _, _ in updateCalls += 1; return errSecSuccess },
+            add: { _, _ in addCalls += 1; return errSecSuccess }
+        )
+
+        #expect(ok == false)
+        #expect(updateCalls == 0)
+        #expect(addCalls == 0)
+        #expect(rejected.count == 1)
+        #expect(rejected.first?.path == "/tmp/not-signed")
+    }
+
+    /// A non-empty list the verifier approves in full is exempt from the
+    /// explicit-`onReject` requirement (nonfunctional clause 9): nothing is
+    /// rejected, so nothing is diagnosed, and the write proceeds normally.
+    @Test func performWriteProceedsWhenAllTrustedPathsAreApproved() {
+        var updateCalls = 0
+        let ok = LiveCredentialWriter.performWrite(
+            data: Data("token".utf8),
+            trustedPaths: ["/Applications/Claude.app", "/usr/local/bin/claude"],
+            service: LiveCredentialWriter.service,
+            account: "ser",
+            verify: { _ in true },
+            update: { _, _ in updateCalls += 1; return errSecSuccess },
+            add: { _, _ in errSecSuccess }
+        )
+        #expect(ok)
+        #expect(updateCalls == 1)
+    }
+
+    /// Per-path filtering (functional clause 3): with a mix of approved and
+    /// rejected paths, the write still proceeds using only the approved
+    /// subset, and exactly the rejected path is diagnosed.
+    @Test func performWriteFiltersRejectedPathsButKeepsApprovedOnes() {
+        var updateCalls = 0
+        var rejected: [String] = []
+        let ok = LiveCredentialWriter.performWrite(
+            data: Data("token".utf8),
+            trustedPaths: ["/good/path", "/bad/path"],
+            service: LiveCredentialWriter.service,
+            account: "ser",
+            verify: { $0 == "/good/path" },
+            onReject: { path, _ in rejected.append(path) },
+            update: { _, _ in updateCalls += 1; return errSecSuccess },
+            add: { _, _ in errSecSuccess }
+        )
+        #expect(ok)
+        #expect(updateCalls == 1)
+        #expect(rejected == ["/bad/path"])
+    }
+
     // MARK: - performWriteValue
 
     @Test func performWriteValueUpdatesInPlaceWhenItemExists() {

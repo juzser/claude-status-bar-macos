@@ -1,0 +1,10 @@
+# Fixture (NEVER COMPILED): a workflow fragment whose "Signing argv test"
+# step runs "make signing-test" -- criterion 12's pair must PASS with both
+# greps returning a line, in the SAME step mapping.
+jobs:
+  build:
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Signing argv test
+        run: make signing-test
