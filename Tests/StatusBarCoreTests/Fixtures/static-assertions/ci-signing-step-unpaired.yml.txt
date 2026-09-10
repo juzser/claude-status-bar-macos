@@ -1,0 +1,10 @@
+# Fixture (NEVER COMPILED): the name and the run value both occur, but in
+# DIFFERENT step mappings -- criterion 12 must FAIL, since it requires the
+# PAIRED name and run value in the same step, not two independent hits.
+jobs:
+  build:
+    steps:
+      - name: Signing argv test
+        run: echo unrelated
+      - name: Some other step
+        run: make signing-test

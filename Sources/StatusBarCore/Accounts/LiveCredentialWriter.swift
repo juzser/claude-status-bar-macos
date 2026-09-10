@@ -108,6 +108,8 @@ public enum LiveCredentialWriter {
         service: String,
         account: String,
         onStatus: (KeychainStatus) -> Void = { _ in },
+        verify: (String) -> Bool = TrustedApplicationGate.defaultVerify,
+        onReject: (String, String) -> Void = TrustedApplicationGate.defaultOnReject,
         update: (CFDictionary, CFDictionary) -> OSStatus = SecItemUpdate,
         add: (CFDictionary, UnsafeMutablePointer<CFTypeRef?>?) -> OSStatus = SecItemAdd
     ) -> Bool {
@@ -118,7 +120,16 @@ public enum LiveCredentialWriter {
             kSecAttrAccount as String: account,
         ]
 
-        let trustedApps: [SecTrustedApplication] = trustedPaths.compactMap { path in
+        guard let filteredPaths = TrustedApplicationGate.filter(
+            trustedPaths, verify: verify, onReject: onReject
+        ) else {
+            // Every supplied path was rejected: refuse the write rather than
+            // leaving the item with an ACL naming zero trusted applications
+            // (nonfunctional clause 6). Existing item and ACL untouched.
+            return false
+        }
+
+        let trustedApps: [SecTrustedApplication] = filteredPaths.compactMap { path in
             var app: SecTrustedApplication?
             SecTrustedApplicationCreateFromPath(path, &app)
             return app

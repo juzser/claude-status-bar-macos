@@ -1,0 +1,11 @@
+// Fixture (NEVER COMPILED): a read-only `security find-certificate`
+// specimen, split across lines the way `Process` is ordinarily
+// configured. Criterion 9's inventory must PASS.
+import Foundation
+
+func readOnlySpecimen() {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+    process.arguments = ["find-certificate", "-c", "ClaudeStatusBar Local Signing"]
+    try? process.run()
+}

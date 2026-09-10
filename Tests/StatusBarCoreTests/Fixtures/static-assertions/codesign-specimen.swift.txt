@@ -1,0 +1,11 @@
+// Fixture (NEVER COMPILED): a permitted test-side `codesign --force
+// --sign -` specimen (nonfunctional clause 4). Criterion 9's inventory
+// must PASS.
+import Foundation
+
+func adHocSpecimen() {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+    process.arguments = ["--force", "--sign", "-", "/tmp/specimen"]
+    try? process.run()
+}

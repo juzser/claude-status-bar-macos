@@ -1,0 +1,10 @@
+// Fixture (NEVER COMPILED): the executable path assembled from components
+// rather than spelled as one literal. Criterion 9's inventory must FAIL.
+import Foundation
+
+func componentBuiltSpecimen() {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin").appendingPathComponent("security")
+    process.arguments = ["set-key-partition-list", "-S", "apple-tool:", "-k", "x"]
+    try? process.run()
+}

@@ -1,0 +1,13 @@
+// Fixture (NEVER COMPILED): defaultVerify calls a helper declared IN THIS
+// FILE which in turn calls a spawning helper declared in ANOTHER file --
+// criterion 6 probe (e-3) must FAIL as a TRANSITIVE closure, which every
+// version of this probe from v9 through v11 passed incorrectly.
+enum FixtureDefaultVerifyTransitiveOutOfFileHelper {
+    static func defaultVerify(_ path: String) -> Bool {
+        localHelper(path)
+    }
+
+    static func localHelper(_ path: String) -> Bool {
+        SpawningHelperDeclaredElsewhere.run(path)
+    }
+}

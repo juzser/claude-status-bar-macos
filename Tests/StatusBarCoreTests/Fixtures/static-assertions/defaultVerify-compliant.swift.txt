@@ -1,0 +1,17 @@
+// Fixture (NEVER COMPILED): a compliant defaultVerify -- Security-framework
+// calls only, no absolute path, every repo-declared reference declared in
+// this file. Criterion 6 probe (e) must PASS.
+import Foundation
+import Security
+
+enum FixtureDefaultVerifyCompliant {
+    static func defaultVerify(_ path: String) -> Bool {
+        var staticCode: SecStaticCode?
+        let createStatus = SecStaticCodeCreateWithPath(URL(fileURLWithPath: path) as CFURL, [], &staticCode)
+        guard createStatus == errSecSuccess, let staticCode else { return false }
+        var requirement: SecRequirement?
+        let requirementStatus = SecRequirementCreateWithString("certificate leaf[subject.CN] exists" as CFString, [], &requirement)
+        guard requirementStatus == errSecSuccess, let requirement else { return false }
+        return SecStaticCodeCheckValidity(staticCode, [], requirement) == errSecSuccess
+    }
+}

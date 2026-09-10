@@ -1,0 +1,11 @@
+// Fixture (NEVER COMPILED): the executable comes from a variable the
+// inventory cannot resolve to a literal. Criterion 9's inventory must FAIL
+// as UNRESOLVED, not be skipped as harmless.
+import Foundation
+
+func unresolvedSpecimen(toolURL: URL) {
+    let process = Process()
+    process.executableURL = toolURL
+    process.arguments = ["find-certificate"]
+    try? process.run()
+}
