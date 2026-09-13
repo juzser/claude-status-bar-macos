@@ -303,6 +303,29 @@ OUT="$(bash -c 'source scripts/lib/signing-run.sh; CSB_SIGNING_DRY_RUN=1 csb_sig
 [[ "$(wc -l <<<"$OUT" | tr -d ' ')" -eq 2 ]] && [[ "$(grep -vc '^csb-dry-run-argv: ' <<<"$OUT")" -eq 0 ]] && ! grep -qx 'b' <<<"$OUT"
 check "(d) newline token is printed as one escaped line" $?
 
+OUT="$(bash -c 'source scripts/lib/signing-run.sh; declare -a ARGV_IN=("a b" "\$HOME" "it'\''s" "back\slash" "-n"); CSB_SIGNING_DRY_RUN=1 csb_signing_run "${ARGV_IN[@]}"')"
+RT_ARGV_IN=('a b' '$HOME' "it's" 'back\slash' '-n')
+RT_GOT=()
+while IFS= read -r rt_line; do
+  RT_REST="${rt_line#csb-dry-run-argv: }"
+  eval "RT_GOT+=($RT_REST)"
+done <<<"$OUT"
+RT_OK=1
+[[ "${#RT_GOT[@]}" -eq "${#RT_ARGV_IN[@]}" ]] || RT_OK=0
+for rt_i in "${!RT_ARGV_IN[@]}"; do
+  [[ "${RT_GOT[$rt_i]-__csb_missing__}" == "${RT_ARGV_IN[$rt_i]}" ]] || RT_OK=0
+done
+[[ "$RT_OK" -eq 1 ]]
+check "(f) %q round-trips a token with a space, a dollar, a quote, a backslash and a leading dash" $?
+
+OUT="$(bash -c 'source scripts/lib/signing-run.sh; CSB_SIGNING_DRY_RUN=1 csb_signing_run /bin/echo ""')"
+[[ "$(wc -l <<<"$OUT" | tr -d ' ')" -eq 2 ]] && [[ "$(grep -vc '^csb-dry-run-argv: ' <<<"$OUT")" -eq 0 ]]
+check "(g) empty token still prints exactly one prefixed line" $?
+
+OUT="$(bash -c 'source scripts/lib/signing-run.sh; CSB_SIGNING_DRY_RUN=1 csb_signing_run /bin/echo "$(printf "a\nb")" plain "$(printf "c\nd\ne")"')"
+[[ "$(wc -l <<<"$OUT" | tr -d ' ')" -eq 4 ]] && [[ "$(grep -vc '^csb-dry-run-argv: ' <<<"$OUT")" -eq 0 ]]
+check "(h) line count equals a 4-token argv with two newline-bearing tokens" $?
+
 c5d() { # no-leak: CSB_SIGNING_DRY_RUN assigned/exported only in the signing-test target
   local bad=()
   for f in Makefile "$APPFILE" "$IDFILE"; do
