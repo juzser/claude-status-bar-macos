@@ -237,6 +237,243 @@ import Testing
         #expect(TrustedApplicationGate.defaultVerify(dir.path) == false)
     }
 
+    // MARK: - csb-signing-policy-1 C13: acquisition-error path, Bool reduction
+
+    /// (P3) `acquireSelf` returning nil must yield `.noSelf`, never a
+    /// force-unwrap crash and never a silent fall-through to
+    /// `.candidateRejected`.
+    @Test func c13p3NilSelfYieldsNoSelf() {
+        let outcome = TrustedApplicationGate.defaultOutcome(
+            "/tmp/anything", appBundlePath: "/tmp/anything", acquireSelf: { nil })
+        #expect(outcome == .noSelf)
+    }
+
+    /// (P3, structural) The gate guards every acquisition call on
+    /// `errSecSuccess` and force-unwraps none of them.
+    @Test func c13p3AcquisitionCallsAreGuardedNotForceUnwrapped() throws {
+        let sourceURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("../Sources/StatusBarCore/Accounts/TrustedApplicationGate.swift")
+            .standardizedFileURL
+        let text = try String(contentsOf: sourceURL, encoding: .utf8)
+        let lines = text.components(separatedBy: "\n")
+        let guardedCalls = ["SecCodeCopyStaticCode", "SecStaticCodeCheckValidity", "SecCodeCopyDesignatedRequirement"]
+        for (index, line) in lines.enumerated() {
+            for call in guardedCalls where line.contains("\(call)(") {
+                let lineNumber = index + 1
+                let window = lines[index..<min(index + 2, lines.count)].joined(separator: "\n")
+                #expect(window.contains("errSecSuccess"),
+                        "SecCodeCopyStaticCode result used without an errSecSuccess guard at TrustedApplicationGate.swift:\(lineNumber)")
+                #expect(!line.hasSuffix("!"),
+                        "\(call) force-unwrapped at TrustedApplicationGate.swift:\(lineNumber)")
+            }
+        }
+    }
+
+    /// (P4) The Bool entry point can never drift from the outcome: for
+    /// self, an ad-hoc app-class specimen and a non-classified path,
+    /// `defaultVerify` is exactly `defaultOutcome(...) == .approved`.
+    @Test func c13p4DefaultVerifyIsExactlyTheOutcomeReduction() throws {
+        var selfCode: SecCode?
+        let selfStatus = SecCodeCopySelf([], &selfCode)
+        var selfURLRef: CFURL?
+        if selfStatus == errSecSuccess, let selfCode {
+            var staticCode: SecStaticCode?
+            if SecCodeCopyStaticCode(selfCode, [], &staticCode) == errSecSuccess, let staticCode {
+                SecCodeCopyPath(staticCode, [], &selfURLRef)
+            }
+        }
+        var probePaths: [String] = ["/bin/ls"]
+        if let selfURLRef {
+            probePaths.append((selfURLRef as URL).path)
+        }
+
+        let s4 = try appClassSpecimen(sign: "-", identifier: "com.juzser.ClaudeStatusBar")
+        defer { cleanup(s4) }
+        probePaths.append(s4.path)
+
+        for p in probePaths {
+            let expected = TrustedApplicationGate.defaultOutcome(p, appBundlePath: Bundle.main.bundlePath) == .approved
+            #expect(TrustedApplicationGate.defaultVerify(p) == expected,
+                    "defaultVerify(\(p)) diverges from defaultOutcome reduction")
+        }
+    }
+
+    // MARK: - csb-signing-policy-1 C4/C5: the app class, identity-signed specimens
+
+    /// Builds an app-class specimen: a signed copy of the test's own
+    /// executable, under `FileManager.default.temporaryDirectory`, removed
+    /// by the caller's `cleanup(_:)` (nonfunctional clause 5).
+    private func appClassSpecimen(sign identity: String, identifier: String) throws -> URL {
+        let source = URL(fileURLWithPath: CommandLine.arguments[0])
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("app-class-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let copy = dir.appendingPathComponent("specimen")
+        try FileManager.default.copyItem(at: source, to: copy)
+        try codesign(["--force", "--sign", identity, "-i", identifier], path: copy)
+        return copy
+    }
+
+    private func staticCode(at url: URL) -> SecStaticCode? {
+        var code: SecStaticCode?
+        let status = SecStaticCodeCreateWithPath(url as CFURL, [], &code)
+        return status == errSecSuccess ? code : nil
+    }
+
+    /// (4a)-(4d), (5a): S1/S2 = local-identity-signed, identifier
+    /// `com.juzser.ClaudeStatusBar`; S3 = local-identity-signed, a
+    /// different identifier; S4 = ad-hoc WITH S1's identifier (deliberate:
+    /// proves the self DR is not identifier-only, csb-signing-policy-1
+    /// plan-quorum critique #29).
+    @Test func c4And5AppClassIdentitySignedCases() throws {
+        guard localSigningIdentityPresent() else {
+            print("probe skipped: signing identity absent")
+            return
+        }
+        let s1 = try appClassSpecimen(sign: "ClaudeStatusBar Local Signing", identifier: "com.juzser.ClaudeStatusBar")
+        defer { cleanup(s1) }
+        let s2 = try appClassSpecimen(sign: "ClaudeStatusBar Local Signing", identifier: "com.juzser.ClaudeStatusBar")
+        defer { cleanup(s2) }
+        let s3 = try appClassSpecimen(sign: "ClaudeStatusBar Local Signing", identifier: "com.other")
+        defer { cleanup(s3) }
+        let s4 = try appClassSpecimen(sign: "-", identifier: "com.juzser.ClaudeStatusBar")
+        defer { cleanup(s4) }
+
+        guard let s1Code = staticCode(at: s1), let s4Code = staticCode(at: s4) else {
+            Issue.record("could not acquire SecStaticCode for S1/S4")
+            return
+        }
+
+        // (4a) app class admits a self-signed sibling.
+        #expect(TrustedApplicationGate.verify(s2.path, appBundlePath: s2.path, selfCode: s1Code) == true)
+        // (4b) ad-hoc candidate, identity-signed self carrying the SAME
+        // identifier: rejected — the self DR is not identifier-only.
+        #expect(TrustedApplicationGate.verify(s4.path, appBundlePath: s4.path, selfCode: s1Code) == false)
+        // (4c) identity-signed candidate under a DIFFERENT identifier: the
+        // self DR pins the identifier, so this is rejected too.
+        #expect(TrustedApplicationGate.verify(s3.path, appBundlePath: s3.path, selfCode: s1Code) == false)
+        // (4d) ad-hoc self: step (ii)'s fail-safe admits nothing, not even
+        // byte-identical ad-hoc code.
+        #expect(TrustedApplicationGate.verify(s4.path, appBundlePath: s4.path, selfCode: s4Code) == false)
+
+        // (5a) S2 relocated to a basename other than "claude", verified
+        // against a DIFFERENT appBundlePath (S1): the relocated path is
+        // neither equal to appBundlePath nor named "claude", so it falls
+        // in NEITHER class and is rejected outright — proving requirements
+        // are not tried against every path regardless of classification.
+        let renamed = s2.deletingLastPathComponent().appendingPathComponent("not-claude")
+        try FileManager.default.moveItem(at: s2, to: renamed)
+        #expect(TrustedApplicationGate.verify(renamed.path, appBundlePath: s1.path, selfCode: s1Code) == false)
+    }
+
+    /// (5b) An unsigned directory in the app class, with `selfCode: nil`.
+    @Test func c5bUnsignedDirectoryAppClassWithNilSelfIsRejected() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c5b-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let appDir = dir.appendingPathComponent("A.app", isDirectory: true)
+        try FileManager.default.createDirectory(at: appDir, withIntermediateDirectories: true)
+        #expect(TrustedApplicationGate.verify(appDir.path, appBundlePath: appDir.path, selfCode: nil) == false)
+    }
+
+    /// (4e) `scripts/make-app.sh` never sets a custom designated
+    /// requirement — the app class relies on codesign's DEFAULT DR.
+    @Test func c4eMakeAppScriptSetsNoCustomDesignatedRequirement() throws {
+        let scriptURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("../scripts/make-app.sh")
+            .standardizedFileURL
+        let text = try String(contentsOf: scriptURL, encoding: .utf8)
+        for (index, line) in text.components(separatedBy: "\n").enumerated() {
+            guard line.contains("codesign") else { continue }
+            let tokens = line.split(separator: " ").map(String.init)
+            #expect(!tokens.contains("-r") && !tokens.contains("--requirements"),
+                    "make-app.sh:\(index + 1) sets a custom designated requirement; the app class relies on the default DR")
+        }
+    }
+
+    // MARK: - csb-signing-policy-1 C11/C12: the app class, wired end-to-end
+
+    /// Measures the running test process's own signature (never assumed)
+    /// and records it; used by both P1 (C11) and to decide P2's (C12) skip
+    /// branch.
+    private func measureSelf() throws -> (path: String, output: String, hasCertificate: Bool) {
+        var selfCode: SecCode?
+        #expect(SecCodeCopySelf([], &selfCode) == errSecSuccess)
+        var staticCode: SecStaticCode?
+        #expect(SecCodeCopyStaticCode(selfCode!, [], &staticCode) == errSecSuccess)
+        var pathRef: CFURL?
+        #expect(SecCodeCopyPath(staticCode!, [], &pathRef) == errSecSuccess)
+        let path = (pathRef! as URL).path
+
+        func run(_ arguments: [String]) throws -> String {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+            process.arguments = arguments
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = pipe
+            try process.run()
+            process.waitUntilExit()
+            return String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        }
+        let dv = try run(["-dv", path])
+        let dr = try run(["-d", "-r-", path])
+        let output = "path=\(path)\n\(dv)\ndesignated requirement:\n\(dr)"
+
+        // Measured, not assumed: "certificate leaf[subject.CN] exists" is
+        // the SAME precondition `appClassOutcome` applies to self, checked
+        // here with the same Security-framework call so the measurement
+        // cannot drift from what the gate itself decides. A codesign -dv
+        // text heuristic (presence of "Authority=") is not reliable for
+        // every code-signing shape (observed 2026-09-14: an Apple-signed
+        // CommandLineTools helper with no "Authority=" line whose
+        // SecStaticCodeCheckValidity against this precondition still
+        // succeeds).
+        var precondition: SecRequirement?
+        let preconditionStatus = SecRequirementCreateWithString(
+            TrustedApplicationGate.selfCertificatePrecondition as CFString, [], &precondition)
+        let flags = SecCSFlags(rawValue: kSecCSStrictValidate | kSecCSCheckAllArchitectures)
+        let hasCertificate = preconditionStatus == errSecSuccess && precondition != nil
+            && SecStaticCodeCheckValidity(staticCode!, flags, precondition) == errSecSuccess
+        return (path, output, hasCertificate)
+    }
+
+    /// (P1) `defaultOutcome(selfPath, appBundlePath: selfPath)` matches the
+    /// measured self exactly: `.approved` when self carries a certificate,
+    /// `.selfFailsPrecondition` otherwise. Graded whichever way the
+    /// measurement falls (spec-review r3).
+    @Test func c11p1DefaultOutcomeOnSelfMatchesMeasurement() throws {
+        let measurement = try measureSelf()
+        print("C11 self measurement:\n\(measurement.output)")
+        let outcome = TrustedApplicationGate.defaultOutcome(measurement.path, appBundlePath: measurement.path)
+        if measurement.hasCertificate {
+            print("P1 branch: approved")
+            #expect(outcome == .approved)
+        } else {
+            print("P1 branch: selfFailsPrecondition")
+            #expect(outcome == .selfFailsPrecondition)
+        }
+    }
+
+    /// (P2) The self/candidate swap: an ad-hoc S4 read as SELF must fail
+    /// the precondition, not be treated as the candidate. Caught only by
+    /// an ad-hoc specimen — an identity-signed one clears the precondition
+    /// under either ordering and is blind to this mis-wiring.
+    @Test func c12p2SelfCandidateSwapCaughtByAdHocSpecimen() throws {
+        let measurement = try measureSelf()
+        guard measurement.hasCertificate else {
+            print("probe skipped: self is ad-hoc, swap unobservable")
+            return
+        }
+        let s4 = try appClassSpecimen(sign: "-", identifier: "com.juzser.ClaudeStatusBar")
+        defer { cleanup(s4) }
+        let outcome = TrustedApplicationGate.defaultOutcome(s4.path, appBundlePath: s4.path)
+        #expect(outcome == .candidateRejected)
+    }
+
     // MARK: - Criterion 8: the rejection is observable in the shipped app
 
     /// Probe (a): the sink actually writes, into a not-yet-existing
