@@ -8,10 +8,36 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
-      - run: swift test
+      - name: Swift test
+        shell: bash
+        run: swift test 2>&1 | tee swift-test.log
       - name: Hook integration test
         run: |
           swift build
           ./scripts/hook-integration-test.sh
       - name: Signing argv test
         run: make signing-test
+      - name: Upload swift test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swift-test-log
+          path: swift-test.log
+          if-no-files-found: warn
+      - name: Annotate recorded known issues
+        if: always()
+        shell: bash
+        run: |
+          matches=$(grep -F 'recorded a known issue' swift-test.log || true)
+          count=0
+          if [ -n "$matches" ]; then
+            while IFS= read -r line; do
+              echo "::warning title=swift-testing known issue::${line}"
+              count=$((count + 1))
+            done <<< "$matches"
+          fi
+          summary=$(grep -F 'Test run with' swift-test.log | tail -n 1 || true)
+          {
+            echo "## swift-testing known issues: ${count}"
+            if [ -n "$summary" ]; then echo "$summary"; else echo "summary line not found"; fi
+          } >> "$GITHUB_STEP_SUMMARY"

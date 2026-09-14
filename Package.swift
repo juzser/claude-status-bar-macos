@@ -28,6 +28,7 @@ let package = Package(
         .testTarget(
             name: "StatusBarCoreTests",
             dependencies: ["StatusBarCore", .product(name: "Testing", package: "swift-testing")],
+            exclude: ["Fixtures"],
             swiftSettings: [.swiftLanguageMode(.v5)]),
     ]
 )
