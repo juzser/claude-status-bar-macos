@@ -786,6 +786,93 @@ import Testing
         }
     }
 
+    /// (6a-i, 6a-ii) THE (e-3) CLOSURE RUNS OVER THE REAL FILE. Armed, not
+    /// silent: first asserts `defaultVerify` is actually declared as a
+    /// `func` (else `transitiveOutOfFileSymbol` returns nil vacuously),
+    /// then runs the closure and asserts it reaches the members a
+    /// spelling-blind walk could otherwise miss.
+    @Test func defaultVerifyClosureStaysInFile() throws {
+        let sourceURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("../Sources/StatusBarCore/Accounts/TrustedApplicationGate.swift")
+            .standardizedFileURL
+        let text = try String(contentsOf: sourceURL, encoding: .utf8)
+        #expect(text.range(of: #"(?:static\s+)?func\s+defaultVerify\s*\("#, options: .regularExpression) != nil,
+                "defaultVerify is not declared as a func in TrustedApplicationGate.swift")
+        let reached = DefaultVerifySpawnCheck.reached(text)
+        #expect(reached.isSuperset(of: ["defaultOutcome", "copySelfStaticCode"]),
+                "closure from defaultVerify does not reach: \(Set(["defaultOutcome", "copySelfStaticCode"]).subtracting(reached))")
+        let verdict = DefaultVerifySpawnCheck.check(text, label: "TrustedApplicationGate.swift")
+        #expect(verdict == nil, Comment(rawValue: verdict ?? ""))
+    }
+
+    /// (6a-iii) THE WALK'S TREATMENT OF PARAMETER NAMES, DOTTED CALLEES AND
+    /// DEFAULT-ARGUMENT VALUES, pinned with inline-string regressions
+    /// (Swift source in string literals, never compiled).
+    @Test func spawnCheckWalkRules() {
+        // (alpha) an undotted callee that is a parameter name of the
+        // function being walked is admitted and not followed.
+        let alphaCompliant = """
+        func defaultVerify(_ path: String) -> Bool {
+            return defaultOutcome(path)
+        }
+        func defaultOutcome(_ path: String, acquireSelf: () -> SecStaticCode? = copySelfStaticCode) -> Bool {
+            return acquireSelf() != nil
+        }
+        func copySelfStaticCode() -> SecStaticCode? {
+            return nil
+        }
+        """
+        #expect(DefaultVerifySpawnCheck.check(alphaCompliant, label: "alpha") == nil)
+
+        // (gamma) a bare identifier used as a default-argument value is
+        // enqueued exactly like a called identifier, even though nothing
+        // calls it by name -- graded even when `copySelfStaticCode` is NOT
+        // declared in-text.
+        let gammaUndeclared = """
+        func defaultVerify(_ path: String) -> Bool {
+            return defaultOutcome(path)
+        }
+        func defaultOutcome(_ path: String, acquireSelf: () -> SecStaticCode? = copySelfStaticCode) -> Bool {
+            return acquireSelf() != nil
+        }
+        """
+        let gammaVerdict = DefaultVerifySpawnCheck.check(gammaUndeclared, label: "gamma")
+        #expect(gammaVerdict?.contains("defaultVerify -> defaultOutcome -> copySelfStaticCode") == true)
+
+        // (beta) deny-by-default dotted callee: a non-`self`/`Self`/
+        // `TrustedApplicationGate` receiver whose last segment is not
+        // allowlisted is flagged with the full dotted name.
+        let betaFlagged = """
+        func defaultVerify(_ p: SomeType) -> Bool {
+            return p.spawnHelper()
+        }
+        """
+        let betaVerdict = DefaultVerifySpawnCheck.check(betaFlagged, label: "beta-flagged")
+        #expect(betaVerdict?.contains("defaultVerify -> p.spawnHelper") == true)
+
+        // (beta) `Self.`-prefixed callee resolves through its second
+        // segment under the normal declared-in-file rule.
+        let betaSelfDeclared = """
+        func defaultVerify(_ path: String) -> Bool {
+            return Self.helper()
+        }
+        func helper() -> Bool {
+            return true
+        }
+        """
+        #expect(DefaultVerifySpawnCheck.check(betaSelfDeclared, label: "beta-self") == nil)
+
+        // (beta) a dotted callee whose last segment IS allowlisted is
+        // admitted rather than flagged.
+        let betaAllowlisted = """
+        func defaultVerify(_ path: String) -> Bool {
+            return path.hasSuffix("claude") && FileManager.default.fileExists(atPath: path)
+        }
+        """
+        #expect(DefaultVerifySpawnCheck.check(betaAllowlisted, label: "beta-allowlisted") == nil)
+    }
+
     // MARK: - Filter semantics (functional clause 3)
 
     @Test func filterReturnsEmptyForEmptyInput() {
@@ -809,6 +896,17 @@ import Testing
             ["/a", "/b"], verify: { $0 == "/a" }, onReject: { path, _ in rejected.append(path) })
         #expect(result == ["/a"])
         #expect(rejected == ["/b"])
+    }
+
+    /// (6c) The rejection reason no longer interpolates the deleted
+    /// `policyRequirement`: it names the per-path class (or "no path
+    /// class") and says nothing else about the file (N6).
+    @Test func filterRejectionReasonNamesPerPathClassNotAPolicyString() {
+        var reasons: [String] = []
+        _ = TrustedApplicationGate.filter(
+            ["/tmp/x/claude"], verify: { _ in false }, onReject: { _, reason in reasons.append(reason) },
+            appBundlePath: "/tmp/A.app")
+        #expect(reasons.first?.contains("per-path-class") == true)
     }
 }
 
@@ -1215,6 +1313,8 @@ enum DefaultVerifySpawnCheck {
     static let knownFrameworkSymbols: Set<String> = [
         "SecStaticCodeCreateWithPath", "SecRequirementCreateWithString",
         "SecStaticCodeCheckValidity", "URL", "CFURL",
+        "SecCodeCopySelf", "SecCodeCopyStaticCode", "SecCodeCopyDesignatedRequirement",
+        "hasSuffix", "fileExists",
     ]
     private static let controlFlowKeywords: Set<String> = [
         "if", "guard", "while", "for", "switch", "catch", "return", "let", "var",
@@ -1246,23 +1346,137 @@ enum DefaultVerifySpawnCheck {
     }
 
     private static func transitiveOutOfFileSymbol(_ sourceText: String) -> (symbol: String, path: String)? {
+        walkClosure(sourceText).failure
+    }
+
+    /// The (e-3) walk's visited set, exposed so a test can assert the
+    /// closure actually reaches a specific in-file member rather than
+    /// merely failing to flag anything (6a-ii: a member reached only
+    /// through a spelling the walk cannot see must fail here instead of
+    /// passing silently).
+    static func reached(_ sourceText: String) -> Set<String> {
+        walkClosure(sourceText).visited
+    }
+
+    /// Shared (e-3) walk. Handles three identifier classes `calledIdentifiers`
+    /// captures but that are not themselves out-of-file symbols (6a-iii):
+    /// (alpha) an undotted callee that is a parameter name of the function
+    /// being walked is admitted and not followed; (beta) a dotted callee is
+    /// resolved through its second segment when the first is `self`/`Self`/
+    /// `TrustedApplicationGate`, else the LAST segment must be an allowlisted
+    /// framework symbol or the whole dotted name is flagged; (gamma) a bare
+    /// identifier used as a default-argument value in the walked function's
+    /// own signature is enqueued exactly like a called identifier.
+    private static func walkClosure(_ sourceText: String) -> (failure: (symbol: String, path: String)?, visited: Set<String>) {
         let declared = declaredFunctionBodies(sourceText)
-        guard let entry = declared["defaultVerify"] else { return nil }
+        let signatures = declaredFunctionSignatures(sourceText)
+        guard let entry = declared["defaultVerify"] else { return (nil, []) }
         var visited: Set<String> = ["defaultVerify"]
         var worklist: [(name: String, body: String, path: String)] = [("defaultVerify", entry, "defaultVerify")]
         while !worklist.isEmpty {
-            let (_, body, path) = worklist.removeFirst()
-            for callee in calledIdentifiers(body) {
+            let (name, body, path) = worklist.removeFirst()
+            let params = parameterNames(signatures[name] ?? "")
+            var callees = calledIdentifiers(body)
+            callees.append(contentsOf: defaultArgumentIdentifiers(signatures[name] ?? ""))
+            for callee in callees {
                 if visited.contains(callee) { continue }
+                let segments = callee.components(separatedBy: ".")
+                if segments.count > 1 {
+                    let first = segments[0]
+                    if first == "self" || first == "Self" || first == "TrustedApplicationGate" {
+                        let inner = segments[1]
+                        if visited.contains(inner) { continue }
+                        if let calleeBody = declared[inner] {
+                            visited.insert(inner)
+                            worklist.append((inner, calleeBody, path + " -> " + inner))
+                        } else if !knownFrameworkSymbols.contains(inner) {
+                            return ((inner, path + " -> " + inner), visited)
+                        }
+                        continue
+                    }
+                    if let last = segments.last, knownFrameworkSymbols.contains(last) { continue }
+                    return ((callee, path + " -> " + callee), visited)
+                }
+                if params.contains(callee) { continue }
                 if let calleeBody = declared[callee] {
                     visited.insert(callee)
                     worklist.append((callee, calleeBody, path + " -> " + callee))
                 } else if !knownFrameworkSymbols.contains(callee) {
-                    return (callee, path + " -> " + callee)
+                    return ((callee, path + " -> " + callee), visited)
                 }
             }
         }
-        return nil
+        return (nil, visited)
+    }
+
+    /// Internal parameter names parsed from a declared function's raw
+    /// signature text (top-level comma split, paren-depth aware): the
+    /// identifier immediately before each parameter's `:`.
+    private static func parameterNames(_ signature: String) -> Set<String> {
+        var names: Set<String> = []
+        var depth = 0
+        var current = ""
+        var chunks: [String] = []
+        for ch in signature {
+            if ch == "(" { depth += 1 }
+            if ch == ")" { depth -= 1 }
+            if ch == "," && depth == 0 {
+                chunks.append(current)
+                current = ""
+            } else {
+                current.append(ch)
+            }
+        }
+        chunks.append(current)
+        for chunk in chunks {
+            guard let colonIndex = chunk.firstIndex(of: ":") else { continue }
+            let before = chunk[chunk.startIndex..<colonIndex]
+            let tokens = before.split(whereSeparator: { $0.isWhitespace })
+            if let last = tokens.last { names.insert(String(last)) }
+        }
+        return names
+    }
+
+    /// Bare identifiers used as a default-argument value in a signature
+    /// (`= copySelfStaticCode`), which the closure enqueues even though
+    /// nothing calls them by name (6a-iii gamma).
+    private static func defaultArgumentIdentifiers(_ signature: String) -> [String] {
+        guard let regex = try? NSRegularExpression(pattern: #"=\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:,|\))"#) else { return [] }
+        let ns = signature as NSString
+        var result: [String] = []
+        for match in regex.matches(in: signature, range: NSRange(location: 0, length: ns.length)) {
+            result.append(ns.substring(with: match.range(at: 1)))
+        }
+        return result
+    }
+
+    /// Maps every `func`/`static func` name declared in `sourceText` to its
+    /// paren-balanced raw parameter-list text (including the closing
+    /// paren), used by `parameterNames` and `defaultArgumentIdentifiers`.
+    private static func declaredFunctionSignatures(_ sourceText: String) -> [String: String] {
+        var result: [String: String] = [:]
+        guard let regex = try? NSRegularExpression(pattern: #"(?:static\s+)?func\s+([A-Za-z_][A-Za-z0-9_]*)\s*\("#) else { return result }
+        let ns = sourceText as NSString
+        for match in regex.matches(in: sourceText, range: NSRange(location: 0, length: ns.length)) {
+            let name = ns.substring(with: match.range(at: 1))
+            guard let matchRange = Range(match.range, in: sourceText) else { continue }
+            let openParenIndex = sourceText.index(before: matchRange.upperBound)
+            var depth = 0
+            var i = openParenIndex
+            var endIdx: String.Index?
+            while i < sourceText.endIndex {
+                if sourceText[i] == "(" { depth += 1 }
+                if sourceText[i] == ")" {
+                    depth -= 1
+                    if depth == 0 { endIdx = i; break }
+                }
+                i = sourceText.index(after: i)
+            }
+            guard let endIdx else { continue }
+            let start = sourceText.index(after: openParenIndex)
+            result[name] = String(sourceText[start...endIdx])
+        }
+        return result
     }
 
     /// Maps every `func`/`static func` name declared in `sourceText` to its
