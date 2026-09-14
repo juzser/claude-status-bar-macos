@@ -29,8 +29,22 @@ import Testing
     // `certificate leaf[subject.CN] exists` is the nearest valid
     // expression with the accept/reject behavior the brief describes.
 
-    @Test func policyRequirementIsExactlyPinnedLiteral() {
-        #expect(TrustedApplicationGate.policyRequirement == "certificate leaf[subject.CN] exists")
+    // MARK: - Criterion 1: structure and mapping
+
+    @Test func claudeRequirementIsExactlyPinnedLiteralWithOUClause() {
+        #expect(TrustedApplicationGate.claudeRequirement ==
+                "anchor apple generic and identifier \"com.anthropic.claude-code\" and certificate leaf[subject.OU] = \"Q6L2SF6YDW\"")
+    }
+
+    @Test func selfCertificatePreconditionIsExactlyPinnedLiteral() {
+        #expect(TrustedApplicationGate.selfCertificatePrecondition == "certificate leaf[subject.CN] exists")
+    }
+
+    @Test func classifyMapsAppEqualityWinsOverContent() {
+        #expect(TrustedApplicationGate.classify("/tmp/A.app", appBundlePath: "/tmp/A.app") == .app)
+        #expect(TrustedApplicationGate.classify("/tmp/x/claude", appBundlePath: "/tmp/A.app") == .claude)
+        #expect(TrustedApplicationGate.classify("/bin/ls", appBundlePath: "/tmp/A.app") == nil)
+        #expect(TrustedApplicationGate.classify("/tmp/x/claude", appBundlePath: "/tmp/x/claude") == .app)
     }
 
     /// Builds a signed copy of the test process's own executable under
@@ -96,20 +110,111 @@ import Testing
         return process.terminationStatus == 0
     }
 
-    @Test func defaultVerifyAcceptsSelfSignedLocalIdentity() throws {
-        guard localSigningIdentityPresent() else {
-            // Recorded, not silently skipped: this criterion requires the
-            // identity, which CI does not have.
-            print("probe-c skipped: signing identity absent")
-            return
-        }
-        let specimen = try signedSpecimen(identity: "ClaudeStatusBar Local Signing")
-        defer { cleanup(specimen) }
-        #expect(TrustedApplicationGate.defaultVerify(specimen.path) == true)
+    // MARK: - Criterion 2: the claude class rejects what the old policy admitted
+
+    /// Copies the test's own executable to `<tmp>/<uuid>/claude` so it
+    /// classifies `.claude`, signs it with `codesign`, and removes the
+    /// parent directory in a defer (nonfunctional clause 5).
+    private func claudeClassSpecimen(sign: (URL) throws -> Void) throws -> URL {
+        let source = URL(fileURLWithPath: CommandLine.arguments[0])
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("claude-class-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let copy = dir.appendingPathComponent("claude")
+        try FileManager.default.copyItem(at: source, to: copy)
+        try sign(copy)
+        return copy
     }
 
-    @Test func defaultVerifySanityApproveSystemBinaryRejectPlainFile() throws {
-        #expect(TrustedApplicationGate.defaultVerify("/bin/ls") == true)
+    private func codesign(_ arguments: [String], path: URL) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+        process.arguments = arguments + [path.path]
+        let stderrPipe = Pipe()
+        process.standardError = stderrPipe
+        try process.run()
+        process.waitUntilExit()
+        #expect(process.terminationStatus == 0)
+    }
+
+    /// (2a) The S2 probe: the shipped csb-audit-1 policy admitted this
+    /// specimen (local identity, no OU pin); the per-path-class claude
+    /// requirement must reject it.
+    @Test func defaultVerifyRejectsLocalIdentitySignedClaudeSpecimen() throws {
+        guard localSigningIdentityPresent() else {
+            print("probe skipped: signing identity absent")
+            return
+        }
+        let specimen = try claudeClassSpecimen { copy in
+            try codesign(["--force", "--sign", "ClaudeStatusBar Local Signing", "-i", "com.anthropic.claude-code"], path: copy)
+        }
+        defer { cleanup(specimen) }
+        #expect(TrustedApplicationGate.defaultVerify(specimen.path) == false)
+    }
+
+    /// (2b) Ad-hoc claude-class specimen: machine-independent, always rejected.
+    @Test func defaultVerifyRejectsAdHocSignedClaudeSpecimen() throws {
+        let specimen = try claudeClassSpecimen { copy in
+            try codesign(["--force", "--sign", "-", "-i", "com.anthropic.claude-code"], path: copy)
+        }
+        defer { cleanup(specimen) }
+        #expect(TrustedApplicationGate.defaultVerify(specimen.path) == false)
+    }
+
+    /// (2c) Apple-signed, wrong identifier: an unmodified copy of /bin/ls
+    /// at `<tmp>/claude` (identifier com.apple.ls). `anchor apple generic`
+    /// is true but the identifier clause is not, so the claude class
+    /// rejects it too.
+    @Test func defaultVerifyRejectsAppleSignedWrongIdentifierClaudeSpecimen() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("claude-class-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let copy = dir.appendingPathComponent("claude")
+        try FileManager.default.copyItem(at: URL(fileURLWithPath: "/bin/ls"), to: copy)
+        #expect(TrustedApplicationGate.defaultVerify(copy.path) == false)
+    }
+
+    // MARK: - Criterion 3: the claude class admits the real binary
+
+    /// For every claudeBinaryCandidates entry plus ~/.local/bin/claude
+    /// (expanded here, never a gate literal): if it's an executable
+    /// Developer-ID-signed claude, defaultVerify must approve it.
+    @Test func defaultVerifyAcceptsRealClaudeBinaryIfPresent() throws {
+        let homeDir = NSHomeDirectory()
+        let candidates = LiveCredentialWriter.claudeBinaryCandidates
+            + [(homeDir as NSString).appendingPathComponent(".local/bin/claude")]
+
+        var qualifying: String?
+        for candidate in candidates where FileManager.default.isExecutableFile(atPath: candidate) {
+            let dv = Process()
+            dv.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+            dv.arguments = ["-dv", candidate]
+            let pipe = Pipe()
+            dv.standardError = pipe
+            try dv.run()
+            dv.waitUntilExit()
+            let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            if output.contains("TeamIdentifier=Q6L2SF6YDW") {
+                print("probe: \(candidate) codesign -dv: \(output)")
+                qualifying = candidate
+                break
+            }
+        }
+
+        guard let qualifying else {
+            print("probe skipped: no Developer ID claude binary")
+            return
+        }
+        #expect(TrustedApplicationGate.defaultVerify(qualifying) == true)
+    }
+
+    @Test func defaultVerifySanityApproveClaudeClassRejectPlainFile() throws {
+        // C5(5d): /bin/ls is now in NEITHER class (its last path component
+        // is "ls", not "claude", and it is not this process's own bundle
+        // path), so a bare Apple-signed system binary elsewhere on disk is
+        // no longer admitted by any class.
+        #expect(TrustedApplicationGate.defaultVerify("/bin/ls") == false)
 
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("tag-plain-\(UUID().uuidString)", isDirectory: true)

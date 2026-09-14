@@ -186,6 +186,7 @@ public enum AccountCredentialVault {
         trustedPaths: [String],
         verify: (String) -> Bool = TrustedApplicationGate.defaultVerify,
         onReject: (String, String) -> Void = TrustedApplicationGate.defaultOnReject,
+        makeTrustedApplication: (String) -> SecTrustedApplication? = TrustedApplicationGate.defaultMakeTrustedApplication,
         add: (CFDictionary, UnsafeMutablePointer<CFTypeRef?>?) -> OSStatus = SecItemAdd,
         update: (CFDictionary, CFDictionary) -> OSStatus = SecItemUpdate
     ) -> Bool {
@@ -204,13 +205,24 @@ public enum AccountCredentialVault {
             return false
         }
 
-        let trustedApps: [SecTrustedApplication] = filteredPaths.compactMap { path in
-            var app: SecTrustedApplication?
-            SecTrustedApplicationCreateFromPath(path, &app)
-            return app
-        }
+        // (i) An empty filtered list writes WITHOUT kSecAttrAccess: an
+        // update preserves the item's existing ACL, an add gets the
+        // system default. Neither yields a zero-application ACL.
         var access: SecAccess?
-        SecAccessCreate(service as CFString, trustedApps as CFArray, &access)
+        if !filteredPaths.isEmpty {
+            let trustedApps = filteredPaths.compactMap(makeTrustedApplication)
+            guard !trustedApps.isEmpty else {
+                // (ii) Non-empty filtered list, zero trusted apps: refuse
+                // rather than call SecAccessCreate with an empty array
+                // (nonfunctional clause 6).
+                for path in filteredPaths {
+                    onReject(path, "could not create a trusted application from an approved path")
+                }
+                return false
+            }
+            // (iii) SecAccessCreate only ever runs with a non-empty array.
+            SecAccessCreate(service as CFString, trustedApps as CFArray, &access)
+        }
 
         var newAttributes: [String: Any] = [
             kSecValueData as String: data,
