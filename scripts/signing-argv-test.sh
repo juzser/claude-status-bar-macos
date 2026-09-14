@@ -299,6 +299,33 @@ OUT="$(bash -c 'source scripts/lib/signing-run.sh; CSB_SIGNING_DRY_RUN=1 csb_sig
 ! grep -qx 'csb-indirection-probe' <<<"$OUT" && grep -qx 'csb-dry-run-argv: /bin/echo' <<<"$OUT" && grep -qx 'csb-dry-run-argv: csb-indirection-probe' <<<"$OUT"
 check "(c) dry-run-suppresses: dry run printed argv and executed nothing" $?
 
+OUT="$(bash -c 'source scripts/lib/signing-run.sh; CSB_SIGNING_DRY_RUN=1 csb_signing_run /bin/echo "$(printf "a\nb")"')"
+[[ "$(wc -l <<<"$OUT" | tr -d ' ')" -eq 2 ]] && [[ "$(grep -vc '^csb-dry-run-argv: ' <<<"$OUT")" -eq 0 ]] && ! grep -qx 'b' <<<"$OUT"
+check "(d) newline token is printed as one escaped line" $?
+
+OUT="$(bash -c 'source scripts/lib/signing-run.sh; declare -a ARGV_IN=("a b" "\$HOME" "it'\''s" "back\slash" "-n"); CSB_SIGNING_DRY_RUN=1 csb_signing_run "${ARGV_IN[@]}"')"
+RT_ARGV_IN=('a b' '$HOME' "it's" 'back\slash' '-n')
+RT_GOT=()
+while IFS= read -r rt_line; do
+  RT_REST="${rt_line#csb-dry-run-argv: }"
+  eval "RT_GOT+=($RT_REST)"
+done <<<"$OUT"
+RT_OK=1
+[[ "${#RT_GOT[@]}" -eq "${#RT_ARGV_IN[@]}" ]] || RT_OK=0
+for rt_i in "${!RT_ARGV_IN[@]}"; do
+  [[ "${RT_GOT[$rt_i]-__csb_missing__}" == "${RT_ARGV_IN[$rt_i]}" ]] || RT_OK=0
+done
+[[ "$RT_OK" -eq 1 ]]
+check "(f) %q round-trips a token with a space, a dollar, a quote, a backslash and a leading dash" $?
+
+OUT="$(bash -c 'source scripts/lib/signing-run.sh; CSB_SIGNING_DRY_RUN=1 csb_signing_run /bin/echo ""')"
+[[ "$(wc -l <<<"$OUT" | tr -d ' ')" -eq 2 ]] && [[ "$(grep -vc '^csb-dry-run-argv: ' <<<"$OUT")" -eq 0 ]]
+check "(g) empty token still prints exactly one prefixed line" $?
+
+OUT="$(bash -c 'source scripts/lib/signing-run.sh; CSB_SIGNING_DRY_RUN=1 csb_signing_run /bin/echo "$(printf "a\nb")" plain "$(printf "c\nd\ne")"')"
+[[ "$(wc -l <<<"$OUT" | tr -d ' ')" -eq 4 ]] && [[ "$(grep -vc '^csb-dry-run-argv: ' <<<"$OUT")" -eq 0 ]]
+check "(h) line count equals a 4-token argv with two newline-bearing tokens" $?
+
 c5d() { # no-leak: CSB_SIGNING_DRY_RUN assigned/exported only in the signing-test target
   local bad=()
   for f in Makefile "$APPFILE" "$IDFILE"; do
@@ -353,9 +380,15 @@ check "fixture M3: inverted guard condition is rejected" $?
 rm -rf "$FDIR"
 
 if [[ "$RC" -eq 0 && "$FRC" -eq 0 && "$IDENTITY_PRESENT" -eq 1 ]]; then
-  if [[ -e dist ]]; then find dist -depth -exec rm -r -f {} + 2>/dev/null; fi
+  # ff55736f: never touch the repository's own dist/ here -- launch a copy
+  # of make-app.sh from a mktemp scaffold instead, since make-app.sh:20
+  # cd's to its own parent and therefore resolves "dist" inside whichever
+  # tree the copy lives in.
+  SCAFFOLD="$(mktemp -d)"
+  mkdir -p "$SCAFFOLD/scripts"
+  cp "$APPFILE" "$SCAFFOLD/scripts/make-app.sh"
   START=$(date +%s)
-  ( "${CLEAN[@]}" CSB_SIGNING_DRY_RUN=1 /bin/bash "$APPFILE" >/tmp/csb-e-out.$$ 2>&1 & PID=$!
+  ( "${CLEAN[@]}" CSB_SIGNING_DRY_RUN=1 /bin/bash "$SCAFFOLD/scripts/make-app.sh" >/tmp/csb-e-out.$$ 2>&1 & PID=$!
     ( sleep 5; kill -TERM "$PID" 2>/dev/null; sleep 1; kill -KILL "$PID" 2>/dev/null ) & WPID=$!
     wait "$PID"; echo $? > /tmp/csb-e-rc.$$; kill "$WPID" 2>/dev/null )
   ELAPSED=$(( $(date +%s) - START ))
@@ -364,9 +397,10 @@ if [[ "$RC" -eq 0 && "$FRC" -eq 0 && "$IDENTITY_PRESENT" -eq 1 ]]; then
     echo "SAFETY CONTRADICTION: static analysis certified the guard as first and refusing, but the launch did not exit within the watchdog"
     check "(e) behavioural: make-app refuses under dry-run within the watchdog" 1
   else
-    [[ "$E5RC" -ne 0 ]] && has "make-app: refusing to build a real artifact with CSB_SIGNING_DRY_RUN set" "$E5OUT" && ! has 'Compiling' "$E5OUT" && [[ ! -e dist ]]
+    [[ "$E5RC" -ne 0 ]] && has "make-app: refusing to build a real artifact with CSB_SIGNING_DRY_RUN set" "$E5OUT" && ! has 'Compiling' "$E5OUT" && [[ ! -e "$SCAFFOLD/dist" ]]
     check "(e) behavioural (clean launch, watchdog): make-app refuses to build with CSB_SIGNING_DRY_RUN set" $?
   fi
+  rm -rf "$SCAFFOLD"
 elif [[ "$RC" -eq 0 && "$FRC" -eq 0 ]]; then
   echo "skipped: (e) behavioural half needs the signing identity present; static certification passed"
 else
