@@ -199,6 +199,18 @@ public enum TrustedApplicationGate {
     /// `appBundlePath` is used only to name the rejected path's class in
     /// the diagnostic reason — the accept/reject decision is `verify`'s
     /// alone.
+    ///
+    /// The two sinks that call this (LiveCredentialWriter.swift,
+    /// AccountCredentialVault.swift) build a three-way ACL policy on top
+    /// of this filtered result: (i) an empty filtered list (`trustedPaths:
+    /// []`) makes the sink write without `kSecAttrAccess` — an update
+    /// preserves the item's existing ACL, an add gets the system default;
+    /// (ii) a non-empty filtered list whose every path then fails to
+    /// become a `SecTrustedApplication` makes the sink refuse the write
+    /// rather than call `SecAccessCreate` with an empty array, leaving the
+    /// existing item and its ACL untouched; (iii) `SecAccessCreate` only
+    /// ever runs with a non-empty array. This function decides which
+    /// paths are approved; the sinks decide what to do with that list.
     public static func filter(
         _ paths: [String],
         verify: (String) -> Bool,

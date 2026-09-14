@@ -143,6 +143,9 @@ import Testing
     @Test func defaultVerifyRejectsLocalIdentitySignedClaudeSpecimen() throws {
         guard localSigningIdentityPresent() else {
             print("probe skipped: signing identity absent")
+            withKnownIssue("probe skipped: signing identity absent") {
+                Issue.record("probe skipped: signing identity absent")
+            }
             return
         }
         let specimen = try claudeClassSpecimen { copy in
@@ -204,6 +207,9 @@ import Testing
 
         guard let qualifying else {
             print("probe skipped: no Developer ID claude binary")
+            withKnownIssue("probe skipped: no Developer ID claude binary") {
+                Issue.record("probe skipped: no Developer ID claude binary")
+            }
             return
         }
         #expect(TrustedApplicationGate.defaultVerify(qualifying) == true)
@@ -329,6 +335,9 @@ import Testing
     @Test func c4And5AppClassIdentitySignedCases() throws {
         guard localSigningIdentityPresent() else {
             print("probe skipped: signing identity absent")
+            withKnownIssue("probe skipped: signing identity absent") {
+                Issue.record("probe skipped: signing identity absent")
+            }
             return
         }
         let s1 = try appClassSpecimen(sign: "ClaudeStatusBar Local Signing", identifier: "com.juzser.ClaudeStatusBar")
@@ -466,6 +475,9 @@ import Testing
         let measurement = try measureSelf()
         guard measurement.hasCertificate else {
             print("probe skipped: self is ad-hoc, swap unobservable")
+            withKnownIssue("probe skipped: self is ad-hoc, swap unobservable") {
+                Issue.record("probe skipped: self is ad-hoc, swap unobservable")
+            }
             return
         }
         let s4 = try appClassSpecimen(sign: "-", identifier: "com.juzser.ClaudeStatusBar")
