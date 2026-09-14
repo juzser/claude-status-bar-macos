@@ -110,6 +110,7 @@ public enum LiveCredentialWriter {
         onStatus: (KeychainStatus) -> Void = { _ in },
         verify: (String) -> Bool = TrustedApplicationGate.defaultVerify,
         onReject: (String, String) -> Void = TrustedApplicationGate.defaultOnReject,
+        makeTrustedApplication: (String) -> SecTrustedApplication? = TrustedApplicationGate.defaultMakeTrustedApplication,
         update: (CFDictionary, CFDictionary) -> OSStatus = SecItemUpdate,
         add: (CFDictionary, UnsafeMutablePointer<CFTypeRef?>?) -> OSStatus = SecItemAdd
     ) -> Bool {
@@ -129,13 +130,27 @@ public enum LiveCredentialWriter {
             return false
         }
 
-        let trustedApps: [SecTrustedApplication] = filteredPaths.compactMap { path in
-            var app: SecTrustedApplication?
-            SecTrustedApplicationCreateFromPath(path, &app)
-            return app
-        }
+        // (i) An empty filtered list (trustedPaths: []) writes WITHOUT
+        // kSecAttrAccess: an update preserves the item's existing ACL, an
+        // add gets the system default (SecAccess.h: "the application
+        // creating the item"). Neither yields a zero-application ACL.
         var access: SecAccess?
-        SecAccessCreate(service as CFString, trustedApps as CFArray, &access)
+        if !filteredPaths.isEmpty {
+            let trustedApps = filteredPaths.compactMap(makeTrustedApplication)
+            guard !trustedApps.isEmpty else {
+                // (ii) The filtered list was non-empty but every path
+                // failed to become a SecTrustedApplication: refuse rather
+                // than call SecAccessCreate with an empty array, which
+                // would leave the item with an ACL naming zero trusted
+                // applications (nonfunctional clause 6).
+                for path in filteredPaths {
+                    onReject(path, "could not create a trusted application from an approved path")
+                }
+                return false
+            }
+            // (iii) SecAccessCreate only ever runs with a non-empty array.
+            SecAccessCreate(service as CFString, trustedApps as CFArray, &access)
+        }
 
         var newAttributes: [String: Any] = [
             kSecValueData as String: data,

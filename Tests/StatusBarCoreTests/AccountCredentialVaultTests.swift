@@ -3,6 +3,18 @@ import Security
 import Testing
 @testable import StatusBarCore
 
+/// A SecTrustedApplication that works regardless of the (possibly
+/// nonexistent) path a test injects as "approved": nil requests trust for
+/// the calling process itself, which always succeeds. Standing in for
+/// `TrustedApplicationGate.defaultMakeTrustedApplication` in tests that
+/// verify approved/rejected filtering rather than the real path-to-app
+/// conversion (covered separately by the empty-ACL-hole tests).
+private func dummyTrustedApplication(_ path: String) -> SecTrustedApplication? {
+    var app: SecTrustedApplication?
+    SecTrustedApplicationCreateFromPath(nil, &app)
+    return app
+}
+
 @Suite struct AccountCredentialVaultTests {
     @Test func writeThenReadRoundTripsThroughInjectedStorage() {
         var storage: [String: Data] = [:]
@@ -220,6 +232,7 @@ import Testing
             data: Data("token".utf8), service: "svc", accountId: "acct",
             trustedPaths: ["/Applications/ClaudeStatusBar.app"],
             verify: { _ in true },
+            makeTrustedApplication: dummyTrustedApplication,
             add: { attributes, _ in
                 capturedAttributes = attributes as? [String: Any]
                 return errSecSuccess
@@ -262,6 +275,7 @@ import Testing
             data: Data("token".utf8), service: "svc", accountId: "acct",
             trustedPaths: ["/good/one"],
             verify: { _ in true },
+            makeTrustedApplication: dummyTrustedApplication,
             add: { _, _ in addCalled = true; return errSecSuccess },
             update: { _, _ in errSecItemNotFound }
         )
@@ -277,6 +291,7 @@ import Testing
             trustedPaths: ["/good/path", "/bad/path"],
             verify: { $0 == "/good/path" },
             onReject: { path, _ in rejected.append(path) },
+            makeTrustedApplication: dummyTrustedApplication,
             add: { _, _ in addCalled = true; return errSecSuccess },
             update: { _, _ in errSecItemNotFound }
         )
@@ -292,6 +307,74 @@ import Testing
             update: { _, _ in errSecItemNotFound }
         )
         #expect(ok == false)
+    }
+
+    // MARK: - Criterion 7: empty-ACL hole closed at the performRepairWrite sink
+
+    /// (7a) An empty `trustedPaths` list writes with no `kSecAttrAccess` key
+    /// at all.
+    @Test func performRepairWriteWithEmptyTrustedPathsOmitsAccessKey() {
+        var capturedAttributes: [String: Any]?
+        _ = AccountCredentialVault.performRepairWrite(
+            data: Data("token".utf8), service: "svc", accountId: "acct", trustedPaths: [],
+            add: { attributes, _ in
+                capturedAttributes = attributes as? [String: Any]
+                return errSecSuccess
+            },
+            update: { _, _ in errSecItemNotFound }
+        )
+        #expect(capturedAttributes?[kSecAttrAccess as String] == nil)
+    }
+
+    /// (7b) A non-empty filtered list where every approved path still fails
+    /// to become a `SecTrustedApplication`: refuse the write rather than
+    /// call `SecAccessCreate` with an empty array (nonfunctional clause 6).
+    @Test func performRepairWriteRefusesWhenApprovedPathsYieldNoTrustedApplication() {
+        var updateCalled = false
+        var addCalled = false
+        var rejected: [String] = []
+        let ok = AccountCredentialVault.performRepairWrite(
+            data: Data("token".utf8), service: "svc", accountId: "acct",
+            trustedPaths: ["/good/path"],
+            verify: { _ in true },
+            onReject: { path, _ in rejected.append(path) },
+            makeTrustedApplication: { _ in nil },
+            add: { _, _ in addCalled = true; return errSecSuccess },
+            update: { _, _ in updateCalled = true; return errSecSuccess }
+        )
+        #expect(ok == false)
+        #expect(updateCalled == false)
+        #expect(addCalled == false)
+        #expect(rejected == ["/good/path"])
+    }
+
+    // MARK: - Criterion 8: composed all-rejected regression via the real diagnostic channel
+
+    @Test func performRepairWriteAllRejectedWritesExactlyOneDiagnosticLine() throws {
+        let logURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("gate-diagnostic-\(UUID().uuidString).log")
+        defer { try? FileManager.default.removeItem(at: logURL) }
+
+        var updateCalled = false
+        var addCalled = false
+        let ok = AccountCredentialVault.performRepairWrite(
+            data: Data("token".utf8), service: "svc", accountId: "acct",
+            trustedPaths: ["/tmp/not-signed"],
+            verify: { _ in false },
+            onReject: TrustedApplicationGate.rejectionHandler(writingTo: logURL),
+            add: { _, _ in addCalled = true; return errSecSuccess },
+            update: { _, _ in updateCalled = true; return errSecSuccess }
+        )
+
+        #expect(ok == false)
+        #expect(updateCalled == false)
+        #expect(addCalled == false)
+
+        let logText = try String(contentsOf: logURL, encoding: .utf8)
+        let lines = logText.split(separator: "\n")
+        #expect(lines.count == 1)
+        #expect(lines[0].components(separatedBy: "\t").count == 3)
+        #expect(logText.contains("/tmp/not-signed"))
     }
 
     // MARK: - readStatus

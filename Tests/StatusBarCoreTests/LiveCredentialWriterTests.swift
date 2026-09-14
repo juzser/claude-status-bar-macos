@@ -3,6 +3,18 @@ import Security
 import Testing
 @testable import StatusBarCore
 
+/// A SecTrustedApplication that works regardless of the (possibly
+/// nonexistent) path a test injects as "approved": nil requests trust for
+/// the calling process itself, which always succeeds. Standing in for
+/// `TrustedApplicationGate.defaultMakeTrustedApplication` in tests that
+/// verify approved/rejected filtering rather than the real path-to-app
+/// conversion (covered separately by the empty-ACL-hole tests).
+private func dummyTrustedApplication(_ path: String) -> SecTrustedApplication? {
+    var app: SecTrustedApplication?
+    SecTrustedApplicationCreateFromPath(nil, &app)
+    return app
+}
+
 @Suite struct LiveCredentialWriterTests {
     @Test func readDelegatesToInjectedReader() {
         let result = LiveCredentialWriter.read(reader: { service in
@@ -290,6 +302,7 @@ import Testing
             service: LiveCredentialWriter.service,
             account: "ser",
             verify: { _ in true },
+            makeTrustedApplication: dummyTrustedApplication,
             update: { _, _ in updateCalls += 1; return errSecSuccess },
             add: { _, _ in errSecSuccess }
         )
@@ -310,12 +323,95 @@ import Testing
             account: "ser",
             verify: { $0 == "/good/path" },
             onReject: { path, _ in rejected.append(path) },
+            makeTrustedApplication: dummyTrustedApplication,
             update: { _, _ in updateCalls += 1; return errSecSuccess },
             add: { _, _ in errSecSuccess }
         )
         #expect(ok)
         #expect(updateCalls == 1)
         #expect(rejected == ["/bad/path"])
+    }
+
+    // MARK: - Criterion 7: empty-ACL hole closed at the performWrite sink
+
+    /// (7a) An empty `trustedPaths` list writes with no `kSecAttrAccess` key
+    /// at all: `SecAccessCreate` is never invoked, and an existing item's
+    /// ACL is left exactly as it was.
+    @Test func performWriteWithEmptyTrustedPathsOmitsAccessKey() {
+        var capturedUpdateAttributes: [String: Any]?
+        let ok = LiveCredentialWriter.performWrite(
+            data: Data("token".utf8),
+            trustedPaths: [],
+            service: LiveCredentialWriter.service,
+            account: "ser",
+            update: { _, attributes in
+                capturedUpdateAttributes = attributes as? [String: Any]
+                return errSecSuccess
+            },
+            add: { _, _ in errSecSuccess }
+        )
+        #expect(ok)
+        #expect(capturedUpdateAttributes?[kSecAttrAccess as String] == nil)
+    }
+
+    /// (7b) A non-empty filtered list where every approved path still fails
+    /// to become a `SecTrustedApplication`: refuse the write rather than
+    /// call `SecAccessCreate` with an empty array (nonfunctional clause 6).
+    @Test func performWriteRefusesWhenApprovedPathsYieldNoTrustedApplication() {
+        var updateCalls = 0
+        var addCalls = 0
+        var rejected: [String] = []
+        let ok = LiveCredentialWriter.performWrite(
+            data: Data("token".utf8),
+            trustedPaths: ["/good/path"],
+            service: LiveCredentialWriter.service,
+            account: "ser",
+            verify: { _ in true },
+            onReject: { path, _ in rejected.append(path) },
+            makeTrustedApplication: { _ in nil },
+            update: { _, _ in updateCalls += 1; return errSecSuccess },
+            add: { _, _ in addCalls += 1; return errSecSuccess }
+        )
+        #expect(ok == false)
+        #expect(updateCalls == 0)
+        #expect(addCalls == 0)
+        #expect(rejected == ["/good/path"])
+    }
+
+    // MARK: - Criterion 8: composed all-rejected regression via the real diagnostic channel
+
+    /// End-to-end: `TrustedApplicationGate.filter` composed with
+    /// `TrustedApplicationGate.rejectionHandler(writingTo:)` (never
+    /// `defaultOnReject`, which would touch the real log path) against a
+    /// temp file, asserting exactly one tab-separated diagnostic line and
+    /// zero update/add calls when every path is rejected.
+    @Test func performWriteAllRejectedWritesExactlyOneDiagnosticLine() throws {
+        let logURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("gate-diagnostic-\(UUID().uuidString).log")
+        defer { try? FileManager.default.removeItem(at: logURL) }
+
+        var updateCalls = 0
+        var addCalls = 0
+        let ok = LiveCredentialWriter.performWrite(
+            data: Data("token".utf8),
+            trustedPaths: ["/tmp/not-signed"],
+            service: LiveCredentialWriter.service,
+            account: "ser",
+            verify: { _ in false },
+            onReject: TrustedApplicationGate.rejectionHandler(writingTo: logURL),
+            update: { _, _ in updateCalls += 1; return errSecSuccess },
+            add: { _, _ in addCalls += 1; return errSecSuccess }
+        )
+
+        #expect(ok == false)
+        #expect(updateCalls == 0)
+        #expect(addCalls == 0)
+
+        let logText = try String(contentsOf: logURL, encoding: .utf8)
+        let lines = logText.split(separator: "\n")
+        #expect(lines.count == 1)
+        #expect(lines[0].components(separatedBy: "\t").count == 3)
+        #expect(logText.contains("/tmp/not-signed"))
     }
 
     // MARK: - performWriteValue

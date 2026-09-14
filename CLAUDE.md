@@ -86,14 +86,24 @@ features (e.g. exit tests, custom traits) when writing tests here.
   version-manager shims). When `LiveCredentialWriter`'s static candidates
   miss, it falls back to `command -v claude` run through
   `InteractiveShellRunner` (an interactive `zsh -ilc`, so it sees the same
-  PATH the user's own terminal would). The resolved path is trusted
-  alongside this app's own bundle path only if it clears
-  `TrustedApplicationGate.defaultVerify` — a code-signature check, not a
-  location check, so a resolved path with no valid signature is dropped
-  rather than added to the Keychain ACL; a static-list miss used to mean the
-  ACL only ever trusted the app, so every `claude` invocation re-triggered a
-  Keychain "Allow" prompt; `LiveCredentialSelfHeal` also re-asserts this ACL
-  once per launch so accounts that predate this fix stop re-prompting
+  PATH the user's own terminal would). `TrustedApplicationGate.defaultVerify`
+  assigns each candidate path to one of two classes and verifies it against
+  that class's own requirement, not one shared check: a path equal to this
+  app's own bundle path is the `.app` class; a path whose last component is
+  `claude` is the `.claude` class; anything else is in neither class and is
+  dropped. The `.claude` class requires Anthropic's Developer ID (team
+  `Q6L2SF6YDW`) and bundle identifier `com.anthropic.claude-code`, so a
+  locally-minted certificate cannot be admitted no matter what identifier it
+  claims. The `.app` class requires the candidate to be "signed the way this
+  process is signed" — validated against the running process's own
+  designated requirement, computed at runtime rather than pinned as a hash
+  in source — and admits nothing when the running process itself is ad-hoc
+  or unsigned; under `swift run` that means the vault ACL repair is skipped
+  rather than downgraded to something looser. A static-list miss used to
+  mean the ACL only ever trusted the app, so every `claude` invocation
+  re-triggered a Keychain "Allow" prompt; `LiveCredentialSelfHeal` also
+  re-asserts this ACL once per launch so accounts that predate this fix
+  stop re-prompting
   without needing a fresh account switch to pick it up.
 
 ## Workflow
